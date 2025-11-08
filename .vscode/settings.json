@@ -1,0 +1,67 @@
+// Place your settings in this file to overwrite default and user settings.
+{
+    "files.exclude": {
+        "out": true, // set this to true to hide the "out" folder with the compiled JS files
+        "dist": true,
+        "**/*.pyc": true,
+        ".nyc_output": true,
+        "obj": true,
+        "bin": true,
+        "**/__pycache__": true,
+        ".pytest_cache/": true,
+        "**/node_modules": true,
+        ".vscode-test": false,
+        ".vscode test": false,
+        "**/.mypy_cache/**": true
+    },
+    "files.watcherExclude": {
+        "**/__pycache__": true,
+        "**/..pytest_cache/": true,
+        "**/.venv/": true,
+        "**/venvs/": true,
+        "**/build/": true,
+        "**/dist/": true
+    },
+    "search.exclude": {
+        "**/.git": true,
+        "**/__pycache__": true,
+        "**/.pytest_cache/": true,
+        "**/.venv/": true,
+        "**/venvs/": true,
+        "**/.nox/": true,
+        "**/build/": true,
+        "**/dist/": true
+    },
+    "[python]": {
+        // Setup Black as default formatter.
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnType": true,
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+        }
+    },
+    // Isort with Black.
+    "isort.args": [
+        "--profile",
+        "black"
+    ],
+    "pylint.path": ["${interpreter}", "-m", "pylint"],
+    // Search for tests in tests folder.
+    "python.testing.pytestArgs": [
+        "tests",
+        "--confcutdir=."
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    // Add root to pythonpath
+    "terminal.integrated.env.linux": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "terminal.integrated.env.osx": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "terminal.integrated.env.windows": {
+        "PYTHONPATH": "${workspaceFolder}"
+    }
+}
