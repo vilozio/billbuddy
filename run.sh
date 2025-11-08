@@ -29,4 +29,4 @@ fi
 
 # Start the bot
 echo "Starting BillBuddy..."
-python app/main.py
+python -m app.main

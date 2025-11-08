@@ -5,6 +5,7 @@
 # Google Cloud credentials
 credentials/*.json
 service-account*.json
+credentials/token.pickle
 
 # Python
 __pycache__/

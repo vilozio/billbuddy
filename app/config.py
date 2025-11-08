@@ -19,8 +19,10 @@ class Config:
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")  # gpt-4o has vision capabilities
 
-    # Google APIs
-    GOOGLE_CREDENTIALS_PATH = os.getenv("GOOGLE_CREDENTIALS_PATH")
+    # Google APIs - OAuth
+    GOOGLE_OAUTH_CLIENT_PATH = os.getenv(
+        "GOOGLE_OAUTH_CLIENT_PATH", "credentials/oauth-client.json"
+    )
     GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
     GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
 
@@ -35,7 +37,7 @@ class Config:
         required_vars = [
             ("TELEGRAM_BOT_TOKEN", cls.TELEGRAM_BOT_TOKEN),
             ("OPENAI_API_KEY", cls.OPENAI_API_KEY),
-            ("GOOGLE_CREDENTIALS_PATH", cls.GOOGLE_CREDENTIALS_PATH),
+            ("GOOGLE_OAUTH_CLIENT_PATH", cls.GOOGLE_OAUTH_CLIENT_PATH),
             ("GOOGLE_DRIVE_FOLDER_ID", cls.GOOGLE_DRIVE_FOLDER_ID),
             ("GOOGLE_SHEET_ID", cls.GOOGLE_SHEET_ID),
         ]
@@ -50,13 +52,13 @@ class Config:
                 "Please check your .env file and ensure all variables are set."
             )
 
-        # Validate Google credentials file exists
+        # Validate OAuth client file exists
         if (
-            cls.GOOGLE_CREDENTIALS_PATH
-            and not Path(cls.GOOGLE_CREDENTIALS_PATH).exists()
+            cls.GOOGLE_OAUTH_CLIENT_PATH
+            and not Path(cls.GOOGLE_OAUTH_CLIENT_PATH).exists()
         ):
             raise ValueError(
-                f"Google credentials file not found at: {cls.GOOGLE_CREDENTIALS_PATH}"
+                f"Google OAuth client file not found at: {cls.GOOGLE_OAUTH_CLIENT_PATH}"
             )
 
         return True

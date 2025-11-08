@@ -29,23 +29,24 @@ pip install -r requirements.txt
 ### Google Cloud Setup
 1. Create project at [Google Cloud Console](https://console.cloud.google.com/)
 2. Enable **Google Drive API** and **Google Sheets API**
-3. Create service account:
+3. Create OAuth 2.0 Client:
    - Go to **APIs & Services** > **Credentials**
-   - Click **Create Credentials** > **Service Account**
-   - Download JSON key file
-4. Note the service account email (looks like: `name@project.iam.gserviceaccount.com`)
+   - Click **Create Credentials** > **OAuth 2.0 Client ID**
+   - Choose **Desktop app** as application type
+   - Name it "BillBuddy Desktop"
+   - Download JSON file and save as `credentials/oauth-client.json`
 
 ## Step 3: Prepare Google Drive & Sheets
 
 ### Google Drive
-1. Create a folder called "Receipts"
-2. Share with service account email (Editor access)
-3. Copy folder ID from URL: `https://drive.google.com/drive/folders/{FOLDER_ID}`
+1. Create a folder called "Receipts" in your Google Drive
+2. Open the folder and copy folder ID from URL: `https://drive.google.com/drive/folders/{FOLDER_ID}`
 
 ### Google Sheets
 1. Create new spreadsheet called "Receipt Log"
-2. Share with service account email (Editor access)
-3. Copy sheet ID from URL: `https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit`
+2. Copy sheet ID from URL: `https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit`
+
+**Note:** You'll authenticate with your Google account in the next step, so the bot will have access to your Drive and Sheets.
 
 ## Step 4: Configure Environment
 
@@ -53,8 +54,8 @@ pip install -r requirements.txt
 # Copy example env file
 cp .env.example .env
 
-# Place Google credentials
-# Save your service account JSON to credentials/service-account.json
+# Place Google OAuth client credentials
+# Save your OAuth client JSON to credentials/oauth-client.json
 
 # Edit .env file with your credentials
 nano .env  # or use your favorite editor
@@ -63,9 +64,19 @@ nano .env  # or use your favorite editor
 Fill in:
 - `TELEGRAM_BOT_TOKEN` - from BotFather
 - `OPENAI_API_KEY` - from OpenAI Platform
-- `GOOGLE_CREDENTIALS_PATH` - path to JSON file (e.g., `credentials/service-account.json`)
+- `GOOGLE_OAUTH_CLIENT_PATH` - path to OAuth client JSON (default: `credentials/oauth-client.json`)
 - `GOOGLE_DRIVE_FOLDER_ID` - from Drive folder URL
 - `GOOGLE_SHEET_ID` - from Sheets URL
+
+## Step 4.5: Authenticate with Google
+
+Run the authentication script to sign in with your Google account:
+
+```bash
+python -m authenticate
+```
+
+A browser window will open. Sign in with your Google account and grant the requested permissions. This only needs to be done once - the token will be saved for future use.
 
 ## Step 5: Run the Bot
 
@@ -95,8 +106,9 @@ python app/main.py
 - Make sure there are no extra spaces or quotes
 
 ### "Failed to initialize Google Drive/Sheets service"
-- Verify credentials file path is correct
-- Check if service account has access to Drive folder and Sheet
+- Verify OAuth client file exists at `credentials/oauth-client.json`
+- Run authentication: `python -m authenticate`
+- Check that you signed in with the correct Google account
 - Ensure APIs are enabled in Google Cloud Console
 
 ### "Failed to extract data from receipt"
