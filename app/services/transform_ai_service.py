@@ -47,6 +47,9 @@ Rules:
 - "rename" keys MUST be exact source names; values are the desired output names.
 - "constants" adds NEW columns (names not in the source) where every row gets the same value.
 - "order" entries use the OUTPUT names — i.e. renamed source columns and constant column names.
+- "order" may be PARTIAL: the names you list are placed first in that order, and every output column you DON'T list keeps its original relative order after them.
+  • To put a column at the START / beginning, list just that column, e.g. "order": ["Account"] (the rest follow unchanged).
+  • By default a new constant column is added at the END, so for "add at the end" you can omit "order".
 - "sort.by" MUST be an output name (a kept/renamed column or a constant). Use "descending": true for high-to-low / newest-first.
 - If the user does not mention dropping columns, keep all of them.
 - Omit "constants", "order", or "sort" if the user does not ask for them.

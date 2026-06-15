@@ -100,6 +100,28 @@ def test_csv_transformer_constants_and_sort():
     print("✓ csv_transformer constants + sort")
 
 
+def test_constant_at_start_partial_order():
+    # "as is" (keep all) + add a constant column at the START via partial order.
+    with tempfile.TemporaryDirectory() as d:
+        in_path = os.path.join(d, "in.csv")
+        out_path = os.path.join(d, "out.csv")
+        with open(in_path, "w", encoding="utf-8") as f:
+            f.write("Date,Amount\n2026-06-07,-3.46\n")
+
+        transform = {
+            "constants": {"Account": "Revolut EUR"},
+            "order": ["Account"],  # only the constant listed -> it leads, rest follow
+        }
+        header, _ = csv_transformer.apply_transform(in_path, out_path, transform, True)
+        assert header == ["Account", "Date", "Amount"], header
+
+        with open(out_path, encoding="utf-8") as f:
+            lines = f.read().strip().splitlines()
+        assert lines[0] == "Account,Date,Amount"
+        assert lines[1] == "Revolut EUR,2026-06-07,-3.46"
+    print("✓ constant at start (partial order)")
+
+
 def test_transform_ai_sanitize():
     from app.services.transform_ai_service import TransformAIService
 
@@ -254,6 +276,7 @@ if __name__ == "__main__":
     test_filename_matcher()
     test_csv_transformer()
     test_csv_transformer_constants_and_sort()
+    test_constant_at_start_partial_order()
     test_transform_ai_sanitize()
     test_scenario_store()
     test_multiple_scenarios_per_pattern()
