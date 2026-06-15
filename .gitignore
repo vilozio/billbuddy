@@ -49,8 +49,13 @@ logs/
 
 # Temporary files
 temp_receipts/
+temp_statements/
 *.tmp
 *.temp
+
+# Local database
+data/
+*.db
 
 # OS specific
 .DS_Store

@@ -10,8 +10,16 @@ from app.bot.commands import (
     status_command,
     unknown_command,
 )
+from app.bot.csv_handlers import build_csv_conversation
 from app.bot.handlers import error_handler, handle_document, handle_photo, handle_text
+from app.bot.settings_commands import (
+    delete_scenario_command,
+    receipts_off_command,
+    receipts_on_command,
+    scenarios_command,
+)
 from app.config import Config
+from app.db import init_db
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__, Config.LOG_LEVEL)
@@ -25,6 +33,9 @@ def main():
         Config.validate()
         logger.info("Configuration validated successfully")
 
+        # Initialize local database (statement scenarios + runtime settings)
+        init_db()
+
         # Create application
         logger.info("Initializing Telegram bot...")
         application = Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
@@ -33,6 +44,16 @@ def main():
         application.add_handler(CommandHandler("start", start_command))
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("status", status_command))
+
+        # Statement / settings commands
+        application.add_handler(CommandHandler("receipts_on", receipts_on_command))
+        application.add_handler(CommandHandler("receipts_off", receipts_off_command))
+        application.add_handler(CommandHandler("scenarios", scenarios_command))
+        application.add_handler(CommandHandler("delete_scenario", delete_scenario_command))
+
+        # CSV statement upload + scenario setup wizard (handles .csv documents).
+        # Registered before the receipt document handler so CSVs are routed here.
+        application.add_handler(build_csv_conversation())
 
         # Register message handlers
         # Photos

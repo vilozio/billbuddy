@@ -186,3 +186,83 @@ class GoogleSheetsService:
         except HttpError as e:
             logger.error(f"Error clearing sheet: {e}")
             return False
+
+
+class GenericSheetsService:
+    """Append arbitrary rows to a named tab of any spreadsheet.
+
+    Unlike :class:`GoogleSheetsService` (hard-wired to the receipt sheet, ``A:H``
+    range and fixed headers), this writes to a caller-supplied spreadsheet/tab
+    with a caller-supplied header. Used by the statement (CSV) pipeline.
+    """
+
+    def __init__(self):
+        try:
+            credentials = GoogleAuthService.get_credentials()
+            self.service = build("sheets", "v4", credentials=credentials)
+            logger.info("Generic Sheets service initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize Generic Sheets service: {e}")
+            raise
+
+    def _ensure_tab(self, spreadsheet_id: str, tab: str):
+        """Create the tab if it does not already exist."""
+        try:
+            self.service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={"requests": [{"addSheet": {"properties": {"title": tab}}}]},
+            ).execute()
+            logger.info(f"Created tab '{tab}' in spreadsheet {spreadsheet_id}")
+        except HttpError as e:
+            # A duplicate-tab error is expected and fine; re-raise anything else.
+            if "already exists" in str(e).lower():
+                logger.debug(f"Tab '{tab}' already exists")
+            else:
+                raise
+
+    def _ensure_header(self, spreadsheet_id: str, tab: str, header: List[str]):
+        """Write ``header`` to row 1 if the tab is empty or has a different header."""
+        result = (
+            self.service.spreadsheets()
+            .values()
+            .get(spreadsheetId=spreadsheet_id, range=f"'{tab}'!1:1")
+            .execute()
+        )
+        existing = result.get("values", [[]])
+        if not existing or existing[0] != header:
+            self.service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=f"'{tab}'!A1",
+                valueInputOption="RAW",
+                body={"values": [header]},
+            ).execute()
+            logger.info(f"Set header on tab '{tab}'")
+
+    @retry(
+        stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10)
+    )
+    def append_rows(
+        self, spreadsheet_id: str, tab: str, header: List[str], rows: List[List]
+    ) -> int:
+        """Ensure the tab/header exist, then append ``rows``. Returns rows appended."""
+        self._ensure_tab(spreadsheet_id, tab)
+        self._ensure_header(spreadsheet_id, tab, header)
+
+        if not rows:
+            return 0
+
+        result = (
+            self.service.spreadsheets()
+            .values()
+            .append(
+                spreadsheetId=spreadsheet_id,
+                range=f"'{tab}'!A:A",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": rows},
+            )
+            .execute()
+        )
+        appended = result.get("updates", {}).get("updatedRows", 0)
+        logger.info(f"Appended {appended} rows to tab '{tab}'")
+        return appended

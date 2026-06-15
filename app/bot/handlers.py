@@ -5,13 +5,24 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from app.services.receipt_processor import ReceiptProcessor
+from app.services import scenario_store
 from app.utils.logger import setup_logger
 from app.config import Config
 
 logger = setup_logger(__name__, Config.LOG_LEVEL)
 
-# Initialize receipt processor
-receipt_processor = ReceiptProcessor()
+# Receipt processor is initialized lazily on first use, so the bot can run in a
+# CSV-only deployment (receipts disabled) without valid receipt/Google credentials.
+_receipt_processor = None
+
+
+def get_receipt_processor() -> ReceiptProcessor:
+    """Return the shared ReceiptProcessor, constructing it on first use."""
+    global _receipt_processor
+    if _receipt_processor is None:
+        _receipt_processor = ReceiptProcessor()
+    return _receipt_processor
+
 
 # Create temporary directory for downloads
 TEMP_DIR = Path("temp_receipts")
@@ -22,7 +33,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle receipt photo messages"""
     user = update.effective_user
     logger.info(f"Received photo from user {user.id} ({user.username})")
-    
+
+    if not scenario_store.receipts_enabled():
+        await update.message.reply_text(
+            "🛑 Receipt processing is currently turned off. Use /receipts_on to enable it."
+        )
+        return
+
     try:
         # Send processing message
         status_message = await update.message.reply_text(
@@ -38,9 +55,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await file.download_to_drive(str(file_path))
         
         logger.info(f"Photo downloaded to: {file_path}")
-        
+
         # Process the receipt
-        receipt = receipt_processor.process_receipt(str(file_path))
+        receipt = get_receipt_processor().process_receipt(str(file_path))
         
         # Clean up temporary file
         try:
@@ -50,7 +67,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Send result to user
         if receipt:
-            summary = receipt_processor.get_receipt_summary(receipt)
+            summary = get_receipt_processor().get_receipt_summary(receipt)
             await status_message.edit_text(summary)
             logger.info(f"Successfully processed receipt for user {user.id}")
         else:
@@ -77,7 +94,13 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     document = update.message.document
     
     logger.info(f"Received document from user {user.id} ({user.username}): {document.file_name}")
-    
+
+    if not scenario_store.receipts_enabled():
+        await update.message.reply_text(
+            "🛑 Receipt processing is currently turned off. Use /receipts_on to enable it."
+        )
+        return
+
     try:
         # Check if it's a PDF
         if not document.file_name.lower().endswith('.pdf'):
@@ -106,9 +129,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await file.download_to_drive(str(file_path))
         
         logger.info(f"Document downloaded to: {file_path}")
-        
+
         # Process the receipt
-        receipt = receipt_processor.process_receipt(str(file_path))
+        receipt = get_receipt_processor().process_receipt(str(file_path))
         
         # Clean up temporary file
         try:
@@ -122,7 +145,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Send result to user
         if receipt:
-            summary = receipt_processor.get_receipt_summary(receipt)
+            summary = get_receipt_processor().get_receipt_summary(receipt)
             await status_message.edit_text(summary)
             logger.info(f"Successfully processed PDF receipt for user {user.id}")
         else:

@@ -1,49 +1,84 @@
-# BillBuddy - Receipt Processing Telegram Bot
+# BillBuddy - Receipt & Statement Processing Telegram Bot
 
-BillBuddy is an intelligent Telegram bot that automatically processes receipt images and PDFs, extracts detailed information using ChatGPT, organizes receipts in Google Drive, and logs all data to Google Sheets.
+BillBuddy is an intelligent Telegram bot with two processing directions:
+
+1. **Receipts** — send a photo or PDF of a receipt and BillBuddy extracts the details with GPT‑4 Vision, stores the file in Google Drive, and logs a row to Google Sheets.
+2. **CSV statements** — send a CSV export (bank, broker/IBKR, mortgage, etc.). The first time it sees a new kind of file, BillBuddy runs a short setup wizard to learn how to recognize it, how to transform its columns, and where to send the result. Matching files are then processed **automatically**.
 
 ## Features
 
-- 📸 **Receipt OCR**: Extract data from images and PDFs using GPT-4 Vision API
+### Receipts
+- 📸 **Receipt OCR**: Extract data from images and PDFs using GPT‑4 Vision API
 - 🤖 **Auto-Categorization**: Automatically categorize expenses (groceries, dining, utilities, etc.)
 - 📁 **Google Drive Storage**: Organize receipts by year/month folder structure
 - 📊 **Google Sheets Logging**: Automatic logging of all receipt data
-- 💬 **Telegram Interface**: Easy-to-use bot interface for submitting receipts
 
-## Extracted Information
+### CSV Statements
+- 🧩 **Scenario setup wizard**: Teach the bot a new file kind once; it remembers and reuses the setup
+- 🔎 **Filename recognition**: Recurring files are matched by a human-friendly pattern with `{date}` / `{any}` placeholders
+- 🤖 **AI-assisted column mapping**: Describe the transformation in plain language; the bot proposes a mapping you confirm. The transformation itself runs in deterministic code
+- 🔁 **Transformations**: keep / drop / rename / reorder columns
+- 🎯 **Flexible destinations**: append rows to a Google Sheet tab and/or upload the transformed CSV to a Drive folder
+- ⚡ **Automatic re-processing**: once a scenario exists, matching files are processed with no questions
 
-BillBuddy extracts the following from each receipt:
-- Transaction date
-- Merchant/store name
-- Total amount
-- Tax amount
-- Payment method
-- List of purchased items
-- Automatic expense category
+### General
+- 💬 **Telegram Interface**: Easy-to-use bot interface
+- 🔀 **Independent toggles**: receipt processing can be turned off (`/receipts_off`) so the bot can run as statements-only, and vice versa
+
+## Receipt: Extracted Information
+
+- Transaction date, merchant/store name, total, tax, payment method, list of items, automatic expense category
+
+## CSV Statement: How a scenario works
+
+When you send a new kind of CSV the bot asks three things:
+
+1. **Filename pattern** — it proposes a template from the example, e.g.
+   `account-statement_2026-06-01_2026-06-15_en_6d52ac.csv` → `account-statement_{date}_{date}_en_{any}.csv`.
+   Placeholders: `{date}` = `YYYY-MM-DD`, `{any}` = any token. Send `ok` to accept or type your own.
+2. **Transformation** — describe it in plain language, e.g.
+   *"keep Completed Date and Amount, rename Completed Date to Date"*. The bot shows the proposed mapping; send `yes` to confirm or type a new instruction to refine.
+3. **Destination** — a Google Sheet tab, a Drive folder, or both.
+
+The scenario is saved to a local SQLite database. The file that triggered the setup is processed immediately, and future files matching the pattern are processed automatically.
 
 ## Project Structure
 
 ```
 billbuddy/
 ├── app/
-│   ├── main.py                    # Entry point
-│   ├── config.py                  # Configuration management
+│   ├── main.py                       # Entry point (registers handlers, inits DB)
+│   ├── config.py                     # Configuration management
+│   ├── db.py                         # SQLite init (scenarios + settings)
 │   ├── bot/
-│   │   ├── handlers.py            # Message handlers
-│   │   └── commands.py            # Bot commands
+│   │   ├── handlers.py               # Receipt photo/PDF/text handlers
+│   │   ├── commands.py               # /start, /help, /status
+│   │   ├── csv_handlers.py           # CSV upload + scenario setup wizard
+│   │   └── settings_commands.py      # /receipts_on|off, /scenarios, /delete_scenario
 │   ├── services/
-│   │   ├── receipt_processor.py  # Processing orchestrator
-│   │   ├── openai_service.py     # OpenAI integration
-│   │   ├── google_drive.py       # Google Drive integration
-│   │   └── google_sheets.py      # Google Sheets integration
+│   │   ├── receipt_processor.py      # Receipt processing orchestrator
+│   │   ├── statement_processor.py    # CSV processing orchestrator
+│   │   ├── openai_service.py         # OpenAI receipt OCR
+│   │   ├── transform_ai_service.py   # NL instruction -> transform schema
+│   │   ├── csv_transformer.py        # Deterministic CSV transform engine
+│   │   ├── filename_matcher.py       # Pattern suggest/compile
+│   │   ├── scenario_store.py         # Scenario + settings CRUD
+│   │   ├── google_auth.py            # Google OAuth
+│   │   ├── google_drive.py           # Google Drive integration
+│   │   └── google_sheets.py          # Google Sheets integration
 │   ├── models/
-│   │   └── receipt.py            # Receipt data model
+│   │   ├── receipt.py                # Receipt data model
+│   │   └── scenario.py               # Statement scenario data model
 │   └── utils/
-│       └── logger.py             # Logging configuration
-├── .env                          # Environment variables (create from .env.example)
-├── .env.example                  # Environment variables template
-├── requirements.txt              # Python dependencies
-└── README.md                     # This file
+│       └── logger.py                 # Logging configuration
+├── tests/
+│   └── test_statements.py            # Unit tests for the CSV pipeline
+├── authenticate.py                   # One-time Google OAuth helper
+├── data/                             # SQLite database (git-ignored)
+├── .env                              # Environment variables (create from .env.example)
+├── .env.example                      # Environment variables template
+├── requirements.txt                  # Python dependencies
+└── README.md                         # This file
 ```
 
 ## Prerequisites
@@ -78,82 +113,65 @@ For PDF processing, you may also need to install `poppler`:
 ### 3. Create Telegram Bot
 
 1. Open Telegram and search for [@BotFather](https://t.me/botfather)
-2. Send `/newbot` command
-3. Follow the instructions to create your bot
-4. Copy the **bot token** provided by BotFather
-5. Save this token for later
+2. Send `/newbot` and follow the instructions
+3. Copy the **bot token** provided by BotFather
 
 ### 4. Set Up OpenAI API
 
-1. Go to [OpenAI Platform](https://platform.openai.com/)
-2. Create an account or sign in
-3. Navigate to [API Keys](https://platform.openai.com/api-keys)
-4. Click "Create new secret key"
-5. Copy the **API key** and save it securely
+1. Go to [OpenAI Platform](https://platform.openai.com/) and sign in
+2. Navigate to [API Keys](https://platform.openai.com/api-keys)
+3. Click "Create new secret key" and copy the **API key**
 
-### 5. Set Up Google Cloud Services
+### 5. Set Up Google Cloud (OAuth)
 
-#### 5.1 Create Google Cloud Project
+BillBuddy authenticates to Google with **OAuth** (user credentials), not a service account. This works with personal Google accounts.
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select an existing one
-3. Note your **Project ID**
+#### 5.1 Create a Google Cloud Project
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) and create/select a project
 
 #### 5.2 Enable Required APIs
+1. **APIs & Services** > **Library**
+2. Enable **Google Drive API** and **Google Sheets API**
 
-1. Go to **APIs & Services** > **Library**
-2. Search and enable:
-   - **Google Drive API**
-   - **Google Sheets API**
+#### 5.3 Configure the OAuth Consent Screen
+1. **APIs & Services** > **OAuth consent screen**
+2. Choose **External**, fill in the basic app info
+3. Add your Google account under **Test users**
 
-#### 5.3 Create Service Account
+#### 5.4 Create an OAuth Client ID
+1. **APIs & Services** > **Credentials** > **Create Credentials** > **OAuth client ID**
+2. Application type: **Desktop app**
+3. Download the JSON and save it as `credentials/oauth-client.json`
+   (or set `GOOGLE_OAUTH_CLIENT_PATH` to wherever you put it)
 
-1. Go to **APIs & Services** > **Credentials**
-2. Click **Create Credentials** > **Service Account**
-3. Fill in the service account details:
-   - Name: `billbuddy-service`
-   - ID: (auto-generated)
-4. Click **Create and Continue**
-5. Grant roles:
-   - **Editor** (or specific Drive/Sheets permissions)
-6. Click **Done**
-
-#### 5.4 Generate Service Account Key
-
-1. Click on the service account you just created
-2. Go to **Keys** tab
-3. Click **Add Key** > **Create new key**
-4. Choose **JSON** format
-5. Download the JSON file
-6. Save it securely in your project directory (e.g., `credentials/service-account.json`)
-7. **Important**: Note the service account email (e.g., `billbuddy-service@project-id.iam.gserviceaccount.com`)
+#### 5.5 Authorize (one-time)
+Run the helper and complete the browser sign-in. This creates `credentials/token.pickle`:
+```bash
+python authenticate.py
+```
+> If you later see `invalid_grant` errors, the token expired or was revoked — delete `credentials/token.pickle` and re-run `python authenticate.py`.
 
 ### 6. Set Up Google Drive
 
-1. Go to [Google Drive](https://drive.google.com/)
-2. Create a new folder called "Receipts" (or any name you prefer)
-3. Right-click the folder and select **Share**
-4. Add the **service account email** (from step 5.4.7) with **Editor** permissions
-5. Copy the **folder ID** from the URL:
-   - URL format: `https://drive.google.com/drive/folders/{FOLDER_ID}`
+1. Create (or pick) a Drive folder for receipts
+2. Copy the **folder ID** from the URL: `https://drive.google.com/drive/folders/{FOLDER_ID}`
+3. (Optional) Create a separate folder for transformed statements
 
 ### 7. Set Up Google Sheets
 
-1. Go to [Google Sheets](https://sheets.google.com/)
-2. Create a new spreadsheet called "Receipt Log" (or any name you prefer)
-3. Click **Share** button
-4. Add the **service account email** (from step 5.4.7) with **Editor** permissions
-5. Copy the **spreadsheet ID** from the URL:
-   - URL format: `https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit`
+1. Create (or pick) a spreadsheet for receipt data
+2. Copy the **spreadsheet ID** from the URL: `https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit`
+3. (Optional) Use a separate spreadsheet for statements
+
+> With OAuth `drive.file` scope, the bot can read/write the files and folders it creates or that you open with it. Make sure the configured folder/spreadsheet are accessible to the signed-in account.
 
 ### 8. Configure Environment Variables
 
-1. Copy the example environment file:
 ```bash
 cp .env.example .env
 ```
 
-2. Edit `.env` and fill in all the values:
+Edit `.env`:
 
 ```env
 # Telegram Bot Configuration
@@ -163,14 +181,21 @@ TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-4o
 
-# Google Cloud Configuration
-GOOGLE_CREDENTIALS_PATH=credentials/service-account.json
+# Google OAuth client JSON (run `python authenticate.py` once)
+GOOGLE_OAUTH_CLIENT_PATH=credentials/oauth-client.json
 
-# Google Drive folder ID
+# Google Drive folder ID (receipts)
 GOOGLE_DRIVE_FOLDER_ID=your_google_drive_folder_id_here
 
-# Google Sheets spreadsheet ID
+# Google Sheets spreadsheet ID (receipt log)
 GOOGLE_SHEET_ID=your_google_sheet_id_here
+
+# Statement (CSV) Processing (optional)
+# Leave blank to reuse the receipt Drive folder / spreadsheet above.
+STATEMENTS_DRIVE_FOLDER_ID=
+STATEMENTS_SHEET_ID=
+# Local SQLite database for statement scenarios and runtime settings
+DB_PATH=data/billbuddy.db
 
 # Application Settings (optional)
 LOG_LEVEL=INFO
@@ -181,135 +206,110 @@ RETRY_DELAY=2
 ### 9. Run the Bot
 
 ```bash
-python app/main.py
-```
-
-Or from the app directory:
-```bash
-cd app
-python main.py
+python -m app.main
 ```
 
 You should see:
 ```
-INFO - BillBuddy bot...
+INFO - Starting BillBuddy bot...
 INFO - Bot is running. Press Ctrl+C to stop.
 ```
 
 ## Usage
 
-### Starting the Bot
+### Receipts
+Send a photo or PDF of your receipt. The bot acknowledges it, processes it (5–15s), sends a summary, stores the file in Drive, and logs a row to Sheets. (Disabled if you ran `/receipts_off`.)
 
-1. Open Telegram
-2. Search for your bot (by the username you set with BotFather)
-3. Send `/start` to begin
-
-### Sending Receipts
-
-Simply send a photo or PDF of your receipt to the bot. The bot will:
-1. Acknowledge receipt of the image/PDF
-2. Process the receipt (5-15 seconds)
-3. Send you a detailed summary
-4. Save the receipt to Google Drive
-5. Log the data to Google Sheets
+### CSV Statements
+Send a `.csv` file:
+- **First time** for a given file kind, the bot walks you through the setup wizard (pattern → transformation → destination), saves a scenario, and processes the file.
+- **Next time** a file matches the saved pattern, it's processed automatically with no questions.
 
 ### Available Commands
 
-- `/start` - Start the bot and see welcome message
-- `/help` - Show help and usage instructions
-- `/status` - Check if the bot is operational
+- `/start` — Welcome message
+- `/help` — Help and usage instructions
+- `/status` — Check if the bot is operational
+- `/scenarios` — List saved CSV statement scenarios
+- `/delete_scenario <id>` — Delete a saved scenario
+- `/receipts_on` — Enable receipt (photo/PDF) processing
+- `/receipts_off` — Disable receipt processing (statements stay active)
+- `/cancel` — Abort the current CSV setup wizard
 
 ### Supported Formats
 
-- **Images**: JPG, JPEG, PNG
-- **Documents**: PDF
+- **Images**: JPG, JPEG, PNG (receipts)
+- **Documents**: PDF (receipts), CSV (statements)
 
 ## Google Sheets Output
 
-The bot creates a spreadsheet with the following columns:
-
+### Receipts
 | Date | Merchant | Amount | Tax | Payment Method | Category | Items | Drive Link |
 |------|----------|--------|-----|----------------|----------|-------|------------|
 
-Example:
 ```
 2024-11-08 | Walmart | 45.67 | 3.42 | Credit Card | Groceries | Milk, Bread, Eggs, ... | https://drive.google.com/...
 ```
 
-## Expense Categories
+### Statements
+Each scenario writes to its own tab with the columns produced by its transformation. For example, a transform that keeps `Completed Date` and `Amount` (renaming `Completed Date` → `Date`) produces:
 
-The bot automatically categorizes receipts into:
-- **Groceries** (supermarkets, food stores)
-- **Dining** (restaurants, cafes)
-- **Transportation** (gas, parking, transit)
-- **Utilities** (electricity, water, internet)
-- **Entertainment** (movies, events, subscriptions)
-- **Healthcare** (pharmacy, medical)
-- **Shopping** (retail, clothing, electronics)
-- **Services** (repairs, cleaning, professional)
-- **Other** (uncategorized)
+| Date | Amount |
+|------|--------|
+| 2026-06-07 14:54:46 | -3.46 |
+
+## Expense Categories (Receipts)
+
+Groceries, Dining, Transportation, Utilities, Entertainment, Healthcare, Shopping, Services, Other.
+
+## Testing
+
+Run the CSV pipeline unit tests (no Google/OpenAI/Telegram credentials required):
+
+```bash
+python -m tests.test_statements
+```
 
 ## Troubleshooting
 
 ### Bot Not Responding
-
 1. Check if the bot is running
 2. Verify your Telegram bot token is correct
 3. Check the logs in `logs/billbuddy.log`
 
 ### OpenAI Errors
+1. Verify your API key is valid and you have credits
+2. Ensure you're using a vision-capable model (`gpt-4o`)
 
-1. Verify your API key is valid
-2. Check if you have sufficient credits
-3. Ensure you're using a model with vision capabilities (gpt-4o, gpt-4-vision-preview)
+### Google Drive/Sheets Errors (OAuth)
+1. Make sure `python authenticate.py` completed and `credentials/token.pickle` exists
+2. On `invalid_grant` / expired token: delete `credentials/token.pickle` and re-authorize
+3. Verify the Drive folder ID and spreadsheet ID, and that the signed-in account can access them
+4. Verify the Drive and Sheets APIs are enabled in Google Cloud Console
 
-### Google Drive/Sheets Errors
-
-1. Verify service account credentials file exists
-2. Ensure the service account has been granted access to both Drive folder and Sheet
-3. Check folder ID and spreadsheet ID are correct
-4. Verify the APIs are enabled in Google Cloud Console
+### CSV Statement Issues
+1. The bot recognizes files by filename pattern — if a file isn't auto-processed, check `/scenarios` and the pattern; re-send to set up a new one if needed
+2. If the AI mapping looks wrong, type a clearer instruction instead of `yes` to refine it
+3. Column names in your instruction should match the CSV headers exactly
 
 ### PDF Processing Issues
-
 1. Ensure `poppler` is installed
-2. Check if the PDF is readable (not corrupted)
-3. Try converting the PDF to an image first
+2. Check that the PDF is readable (not corrupted)
 
 ## Development
 
-### Running in Development Mode
-
 ```bash
-# Set log level to DEBUG for more verbose output
-LOG_LEVEL=DEBUG python app/main.py
+# Verbose logging
+LOG_LEVEL=DEBUG python -m app.main
 ```
 
-### Testing Individual Components
-
-```python
-# Test OpenAI service
-from app.services.openai_service import OpenAIService
-service = OpenAIService()
-receipt = service.process_receipt_image("path/to/receipt.jpg")
-
-# Test Google Drive upload
-from app.services.google_drive import GoogleDriveService
-drive = GoogleDriveService()
-link = drive.upload_receipt("path/to/file.jpg", "2024-11-08", "Test Store", 10.00)
-
-# Test Google Sheets
-from app.services.google_sheets import GoogleSheetsService
-sheets = GoogleSheetsService()
-sheets.append_receipt(receipt)
-```
+The receipt processor is initialized lazily, so the bot can run as a statements-only deployment (`/receipts_off`) without exercising the receipt pipeline.
 
 ## Security Notes
 
-- **Never commit** your `.env` file or credentials to version control
-- Keep your API keys and tokens secure
+- **Never commit** your `.env`, `credentials/`, or `data/` to version control (they are git-ignored)
+- Keep your API keys, bot token, and OAuth credentials secure
 - Regularly rotate your credentials
-- Use environment-specific credentials for production
 
 ## License
 
@@ -319,11 +319,6 @@ This project is licensed under the MIT License.
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## Support
-
-For issues, questions, or suggestions, please open an issue on GitHub or contact the maintainer.
-
 ---
 
 **BillBuddy** - Making expense tracking effortless! 🧾✨
-

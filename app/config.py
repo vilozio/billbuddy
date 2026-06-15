@@ -26,6 +26,16 @@ class Config:
     GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
     GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
 
+    # Statement (CSV) processing
+    # Default Drive folder for transformed statement files (falls back to the
+    # receipts folder if not set). Default spreadsheet for statement scenarios
+    # that append to a Sheet tab (falls back to GOOGLE_SHEET_ID).
+    STATEMENTS_DRIVE_FOLDER_ID = os.getenv("STATEMENTS_DRIVE_FOLDER_ID")
+    STATEMENTS_SHEET_ID = os.getenv("STATEMENTS_SHEET_ID")
+
+    # Local SQLite database (stores statement scenarios and runtime settings)
+    DB_PATH = os.getenv("DB_PATH", "data/billbuddy.db")
+
     # Application settings
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
     MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))

@@ -23,7 +23,13 @@ I'm your personal receipt processing assistant. Here's what I can do:
   • Store the receipt in Google Drive
   • Log all information to Google Sheets
 
-Simply send me a photo of your receipt or upload a PDF document, and I'll take care of the rest!
+📊 **Send me a CSV statement** (bank/broker/mortgage exports) and I will:
+  • Learn how to recognize this file by name (one-time setup)
+  • Apply your column transformations (keep/rename/reorder)
+  • Append rows to a Google Sheet tab and/or save the file to Drive
+  • Process matching files automatically next time
+
+Simply send me a photo/PDF receipt or a CSV file, and I'll take care of the rest!
 
 💡 Use /help to see available commands."""
     
@@ -51,14 +57,26 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • List of items purchased
 • Automatic category (groceries, dining, etc.)
 
+**CSV statements:**
+Send a CSV file (bank/broker/mortgage statement). The first time, I'll ask:
+1. A filename pattern to recognize it later (e.g. `statement_{date}_{any}.csv`)
+2. How to transform the columns (just describe it in plain language)
+3. Where to send the result (a Google Sheet tab and/or a Drive folder)
+Matching files are then processed automatically.
+
 **Available commands:**
 /start - Start the bot and see welcome message
 /help - Show this help message
 /status - Check if the bot is working
+/scenarios - List saved CSV statement scenarios
+/delete\\_scenario <id> - Delete a saved scenario
+/receipts\\_on - Enable receipt (photo/PDF) processing
+/receipts\\_off - Disable receipt processing
+/cancel - Abort the current CSV setup
 
 **Supported formats:**
 • Images: JPG, PNG, JPEG
-• Documents: PDF
+• Documents: PDF (receipts), CSV (statements)
 
 **Categories I use:**
 • Groceries

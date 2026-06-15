@@ -170,6 +170,53 @@ class GoogleDriveService:
             logger.error(f"Error uploading receipt: {e}", exc_info=True)
             return None
 
+    @retry(
+        stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10)
+    )
+    def upload_file(
+        self, file_path: str, folder_id: str, filename: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Upload an arbitrary file to a specific Drive folder (no receipt-specific
+        naming or year/month structure). Used by the statement (CSV) pipeline.
+
+        Args:
+            file_path: Local path to the file to upload
+            folder_id: Target Drive folder ID
+            filename: Name to store the file as (defaults to the local file name)
+
+        Returns:
+            Shareable link to the uploaded file, or None if upload fails
+        """
+        try:
+            name = filename or Path(file_path).name
+            logger.info(f"Uploading file to Google Drive: {name}")
+
+            file_metadata = {"name": name, "parents": [folder_id]}
+            media = MediaFileUpload(file_path, resumable=True)
+
+            file = (
+                self.service.files()
+                .create(body=file_metadata, media_body=media, fields="id, webViewLink")
+                .execute()
+            )
+
+            file_id = file.get("id")
+            self.service.permissions().create(
+                fileId=file_id, body={"type": "anyone", "role": "reader"}
+            ).execute()
+
+            web_link = file.get("webViewLink")
+            logger.info(f"File uploaded successfully: {web_link}")
+            return web_link
+
+        except HttpError as e:
+            logger.error(f"HTTP error uploading file: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error uploading file: {e}", exc_info=True)
+            return None
+
     def delete_file(self, file_id: str) -> bool:
         """
         Delete a file from Google Drive
