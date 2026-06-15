@@ -170,6 +170,35 @@ def test_scenario_store():
     print("✓ scenario_store")
 
 
+def test_multiple_scenarios_per_pattern():
+    init_db()
+    pattern = "revolut_{date}_{any}.csv"
+    regex = filename_matcher.compile_pattern(pattern)
+    for name in ("Revolut EUR", "Revolut Investments"):
+        scenario_store.add_scenario(
+            Scenario(
+                name=name,
+                filename_pattern=pattern,
+                pattern_regex=regex,
+                transform_json='{"keep": ["Amount"]}',
+                created_at="2026-06-15T00:00:00",
+            )
+        )
+
+    fname = "revolut_2026-06-01_abc123.csv"
+    matches = scenario_store.find_matches(fname)
+    assert len(matches) == 2
+    assert [m.name for m in matches] == ["Revolut EUR", "Revolut Investments"]  # creation order
+    # find_matching still returns the first match.
+    assert scenario_store.find_matching(fname).name == "Revolut EUR"
+    # Non-matching file -> empty.
+    assert scenario_store.find_matches("mortgage_2026.csv") == []
+
+    for m in matches:
+        scenario_store.delete_scenario(m.id)
+    print("✓ multiple scenarios per pattern")
+
+
 def test_spreadsheet_id_extraction():
     from app.bot.csv_handlers import _extract_spreadsheet_id
 
@@ -227,6 +256,7 @@ if __name__ == "__main__":
     test_csv_transformer_constants_and_sort()
     test_transform_ai_sanitize()
     test_scenario_store()
+    test_multiple_scenarios_per_pattern()
     test_spreadsheet_id_extraction()
     test_action_log()
     test_parse_a1_rows()

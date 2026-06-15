@@ -36,15 +36,24 @@ def list_scenarios() -> List[Scenario]:
     return [Scenario.from_row(r) for r in rows]
 
 
-def find_matching(filename: str) -> Optional[Scenario]:
-    """Return the first scenario whose pattern fully matches ``filename``."""
+def find_matches(filename: str) -> List[Scenario]:
+    """Return all scenarios whose pattern fully matches ``filename`` (creation order)."""
+    matches = []
     for scenario in list_scenarios():
         try:
             if re.fullmatch(scenario.pattern_regex, filename):
-                return scenario
+                matches.append(scenario)
         except re.error as e:
             logger.warning(f"Bad regex on scenario #{scenario.id}: {e}")
-    return None
+    # list_scenarios() is newest-first; present matches in creation order instead.
+    matches.sort(key=lambda s: s.id or 0)
+    return matches
+
+
+def find_matching(filename: str) -> Optional[Scenario]:
+    """Return the first scenario whose pattern fully matches ``filename``, or None."""
+    matches = find_matches(filename)
+    return matches[0] if matches else None
 
 
 def delete_scenario(scenario_id: int) -> bool:

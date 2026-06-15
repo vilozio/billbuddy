@@ -64,6 +64,17 @@ async def receipts_off_command(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 
+async def add_scenario_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Add another scenario for a file (even if its name matches an existing pattern)."""
+    context.user_data["force_new_scenario"] = True
+    logger.info(f"User {update.effective_user.id} starting an extra scenario")
+    await update.message.reply_text(
+        "➕ Send me the CSV file to add a new scenario for.\n"
+        "If its name matches an existing pattern, I'll reuse that pattern and just "
+        "ask for the new transformation and destination."
+    )
+
+
 async def scenarios_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """List saved CSV scenarios."""
     scenarios = scenario_store.list_scenarios()

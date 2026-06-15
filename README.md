@@ -20,6 +20,7 @@ BillBuddy is an intelligent Telegram bot with two processing directions:
 - 🔁 **Transformations**: keep / drop / rename / reorder columns, add constant columns (e.g. `Source = Revolut`), and sort rows by a column (numeric-aware, ascending or descending)
 - 🎯 **Flexible destinations**: append rows to a Google Sheet tab and/or upload the transformed CSV to a Drive folder
 - ⚡ **Automatic re-processing**: once a scenario exists, matching files are processed with no questions
+- 🧭 **Multiple scenarios per pattern**: when one filename pattern needs different handling (e.g. the same export feeding two sheets), keep several scenarios under it and the bot asks which to run on upload
 
 ### General
 - 💬 **Telegram Interface**: Easy-to-use bot interface
@@ -41,6 +42,10 @@ When you send a new kind of CSV the bot asks three things:
 3. **Destination** — a Google Sheet tab, a Drive folder, or both. For a Sheet, it offers any spreadsheets you've used before (remembered in the local database); you can pick one, paste a new spreadsheet link/ID (saved for next time), or create a new one with `new <Title>`, then name the tab.
 
 The scenario is saved to a local SQLite database. The file that triggered the setup is processed immediately, and future files matching the pattern are processed automatically.
+
+### Multiple scenarios for one pattern
+
+Sometimes the filename alone can't tell two cases apart (e.g. the same bank export should go to two different sheets). Use **`/add_scenario`** then upload the file: the bot reuses the matched pattern and asks only for a name, transformation, and destination. When an uploaded file matches more than one scenario, the bot lists them and you pick which to run (or choose "➕ Create a new scenario for this file").
 
 ## Project Structure
 
@@ -231,6 +236,7 @@ Send a `.csv` file:
 - `/help` — Help and usage instructions
 - `/status` — Check if the bot is operational
 - `/scenarios` — List saved CSV statement scenarios
+- `/add_scenario` — Add another scenario for a file (lets one pattern have several scenarios)
 - `/delete_scenario <id>` — Delete a saved scenario
 - `/undo` — Undo the last processed receipt or statement (removes the appended Sheet rows and deletes the uploaded Drive file). Run again to undo the one before it.
 - `/receipts_on` — Enable receipt (photo/PDF) processing

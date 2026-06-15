@@ -13,6 +13,7 @@ from app.bot.commands import (
 from app.bot.csv_handlers import build_csv_conversation
 from app.bot.handlers import error_handler, handle_document, handle_photo, handle_text
 from app.bot.settings_commands import (
+    add_scenario_command,
     delete_scenario_command,
     receipts_off_command,
     receipts_on_command,
@@ -50,6 +51,7 @@ def main():
         application.add_handler(CommandHandler("receipts_on", receipts_on_command))
         application.add_handler(CommandHandler("receipts_off", receipts_off_command))
         application.add_handler(CommandHandler("scenarios", scenarios_command))
+        application.add_handler(CommandHandler("add_scenario", add_scenario_command))
         application.add_handler(CommandHandler("delete_scenario", delete_scenario_command))
         application.add_handler(CommandHandler("undo", undo_command))
 
