@@ -1,0 +1,16 @@
+[Unit]
+Description=BillBuddy Telegram bot (long-polling)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=billbuddy
+WorkingDirectory=/home/billbuddy/billbuddy
+# app/config.py calls load_dotenv() itself, so .env in WorkingDirectory is read automatically.
+ExecStart=/home/billbuddy/billbuddy/.venv/bin/python -m app.main
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

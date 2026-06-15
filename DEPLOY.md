@@ -1,0 +1,170 @@
+# Deploying BillBuddy to a VPS
+
+BillBuddy is a long-polling Telegram bot, so it needs **no inbound ports** — only
+outbound HTTPS to Telegram, OpenAI, and Google. It runs as a `systemd` service in a
+Python venv, and GitHub Actions auto-deploys on every push to `main` by SSHing in,
+pulling, reinstalling deps, and restarting the service.
+
+Secrets and state live **on the VPS only** (`.env`, `credentials/`, `data/`). They are
+git-ignored, so `git pull` never touches them. GitHub only holds the SSH deploy key.
+
+---
+
+## 1. One-time VPS setup
+
+Assumes Ubuntu/Debian. Run as a sudo-capable user.
+
+### 1.1 Install system dependencies
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip git poppler-utils
+```
+
+> `poppler-utils` is required by `pdf2image` for PDF receipt processing.
+
+### 1.2 Create the deploy user
+
+```bash
+sudo adduser --disabled-password --gecos "" billbuddy
+```
+
+### 1.3 Create a dedicated deploy SSH key
+
+GitHub Actions logs in as `billbuddy` using this key. Generate it **locally** (or
+anywhere), then install the public half on the VPS:
+
+```bash
+ssh-keygen -t ed25519 -f billbuddy_deploy -N "" -C "github-actions-billbuddy"
+# copy the PUBLIC key into the billbuddy user's authorized_keys on the VPS:
+sudo -u billbuddy mkdir -p /home/billbuddy/.ssh
+sudo -u billbuddy tee -a /home/billbuddy/.ssh/authorized_keys < billbuddy_deploy.pub
+sudo -u billbuddy chmod 700 /home/billbuddy/.ssh
+sudo -u billbuddy chmod 600 /home/billbuddy/.ssh/authorized_keys
+```
+
+Keep `billbuddy_deploy` (the **private** key) for the `VPS_SSH_KEY` GitHub secret below.
+
+### 1.4 Clone the repo
+
+```bash
+sudo -u billbuddy git clone <repo-url> /home/billbuddy/billbuddy
+```
+
+For a private repo, use an HTTPS token or add a separate read-only deploy key to GitHub.
+
+### 1.5 Bootstrap the venv
+
+```bash
+cd /home/billbuddy/billbuddy
+sudo -u billbuddy python3 -m venv .venv
+sudo -u billbuddy .venv/bin/pip install -r requirements.txt
+```
+
+### 1.6 Place secrets and state (git-ignored — survive every `git pull`)
+
+```bash
+cd /home/billbuddy/billbuddy
+sudo -u billbuddy mkdir -p data logs credentials
+
+# .env — copy the template and fill in the required vars
+sudo -u billbuddy cp .env.example .env
+sudo -u billbuddy nano .env
+```
+
+Required vars in `.env`: `TELEGRAM_BOT_TOKEN`, `OPENAI_API_KEY`,
+`GOOGLE_OAUTH_CLIENT_PATH`, `GOOGLE_DRIVE_FOLDER_ID`, `GOOGLE_SHEET_ID`.
+
+Then copy the Google credentials up from your machine:
+
+```bash
+# credentials/oauth-client.json — from Google Cloud Console
+scp credentials/oauth-client.json billbuddy@VPS_HOST:/home/billbuddy/billbuddy/credentials/
+
+# credentials/token.pickle — MUST be generated locally; the OAuth flow needs a browser
+#   and cannot run headless on the VPS.
+python authenticate.py          # run on your laptop, completes the browser consent
+scp credentials/token.pickle billbuddy@VPS_HOST:/home/billbuddy/billbuddy/credentials/
+```
+
+`data/billbuddy.db` is created automatically on first run.
+
+### 1.7 Verify it runs
+
+```bash
+cd /home/billbuddy/billbuddy
+sudo -u billbuddy .venv/bin/python -m app.main
+# Send the bot a message in Telegram to confirm, then Ctrl+C.
+```
+
+---
+
+## 2. Install the systemd service
+
+```bash
+sudo cp /home/billbuddy/billbuddy/deploy/billbuddy.service /etc/systemd/system/billbuddy.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now billbuddy
+sudo systemctl status billbuddy        # should show "active (running)"
+```
+
+### Let the deploy user restart the service without a password
+
+The GitHub Actions deploy runs `sudo systemctl restart billbuddy`. Grant exactly that:
+
+```bash
+echo 'billbuddy ALL=(ALL) NOPASSWD: /bin/systemctl restart billbuddy, /bin/systemctl status billbuddy' \
+  | sudo tee /etc/sudoers.d/billbuddy
+sudo chmod 440 /etc/sudoers.d/billbuddy
+```
+
+> Check the systemctl path with `which systemctl` — on some distros it is
+> `/usr/bin/systemctl`. Match the sudoers rule to it.
+
+---
+
+## 3. Configure GitHub Actions secrets
+
+In the GitHub repo: **Settings → Secrets and variables → Actions → New repository secret**.
+
+| Secret        | Value                                              |
+| ------------- | -------------------------------------------------- |
+| `VPS_HOST`    | VPS public IP or hostname                          |
+| `VPS_USER`    | `billbuddy`                                         |
+| `VPS_SSH_KEY` | Contents of the **private** deploy key (`billbuddy_deploy`) |
+| `VPS_PORT`    | SSH port — only if not `22` (optional)             |
+
+After this, every push to `main` triggers `.github/workflows/deploy.yml`, which pulls,
+reinstalls deps, and restarts the service. You can also trigger it manually from the
+**Actions** tab ("Run workflow").
+
+---
+
+## 4. Operations
+
+```bash
+# Live logs
+journalctl -u billbuddy -f
+
+# Recent logs
+journalctl -u billbuddy -n 100 --no-pager
+
+# Restart / stop / start
+sudo systemctl restart billbuddy
+sudo systemctl stop billbuddy
+sudo systemctl start billbuddy
+```
+
+### Recovering from `invalid_grant` (expired/revoked Google token)
+
+The OAuth flow can't run headless, so regenerate the token on a machine with a browser
+and recopy it:
+
+```bash
+# on your laptop, in the repo:
+rm credentials/token.pickle
+python authenticate.py
+scp credentials/token.pickle billbuddy@VPS_HOST:/home/billbuddy/billbuddy/credentials/
+# on the VPS:
+sudo systemctl restart billbuddy
+```
