@@ -37,15 +37,19 @@ Return ONLY a JSON object with this shape:
 {{
   "keep": ["<source column>", ...],         // columns to keep; omit/empty means keep all
   "rename": {{"<source column>": "<new name>"}},  // optional renames
-  "order": ["<output name>", ...]            // final order, using renamed (output) names
+  "constants": {{"<new column>": "<fixed value>"}}, // optional added columns with a constant value
+  "order": ["<output name>", ...],           // final order, using output names (after renaming)
+  "sort": {{"by": "<output name>", "descending": false}}  // optional: reorder rows by a column
 }}
 
 Rules:
 - "keep" entries MUST be exact names from the column list above.
 - "rename" keys MUST be exact source names; values are the desired output names.
-- "order" entries use the OUTPUT names (i.e. after renaming).
+- "constants" adds NEW columns (names not in the source) where every row gets the same value.
+- "order" entries use the OUTPUT names — i.e. renamed source columns and constant column names.
+- "sort.by" MUST be an output name (a kept/renamed column or a constant). Use "descending": true for high-to-low / newest-first.
 - If the user does not mention dropping columns, keep all of them.
-- If the user does not mention ordering, you may omit "order".
+- Omit "constants", "order", or "sort" if the user does not ask for them.
 - Return ONLY the JSON object, no commentary."""
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
@@ -78,12 +82,27 @@ Rules:
         rename = {
             src: dst for src, dst in (schema.get("rename") or {}).items() if src in valid
         }
-        # Output names after renaming (used to validate "order").
-        output_names = {rename.get(c, c) for c in keep}
+        # Constant columns are new output columns; coerce their values to strings.
+        constants = {
+            str(name): str(value)
+            for name, value in (schema.get("constants") or {}).items()
+        }
+        # All output names: renamed source columns plus constant column names.
+        output_names = {rename.get(c, c) for c in keep} | set(constants)
         order = [o for o in (schema.get("order") or []) if o in output_names]
+
         result = {"keep": keep, "rename": rename}
+        if constants:
+            result["constants"] = constants
         if order:
             result["order"] = order
+
+        sort = schema.get("sort")
+        if isinstance(sort, dict) and sort.get("by") in output_names:
+            result["sort"] = {
+                "by": sort["by"],
+                "descending": bool(sort.get("descending", False)),
+            }
         return result
 
 
@@ -91,12 +110,19 @@ def describe_transform(schema: dict) -> str:
     """Human-readable rendering of a transform schema for confirmation in chat."""
     keep = schema.get("keep", [])
     rename = schema.get("rename") or {}
+    constants = schema.get("constants") or {}
     order = schema.get("order")
+    sort = schema.get("sort")
     lines = ["Proposed mapping:"]
     for src in keep:
         dst = rename.get(src)
         lines.append(f"  • {src} → {dst} (renamed)" if dst else f"  • {src} (keep)")
+    for name, value in constants.items():
+        lines.append(f"  • {name} = \"{value}\" (constant)")
     lines.append("  • [all other columns dropped]")
     if order:
         lines.append(f"Order: {', '.join(order)}")
+    if sort:
+        direction = "descending" if sort.get("descending") else "ascending"
+        lines.append(f"Sort rows by: {sort['by']} ({direction})")
     return "\n".join(lines)

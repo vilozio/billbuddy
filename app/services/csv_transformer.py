@@ -3,13 +3,17 @@
 A transform schema is::
 
     {
-        "keep":   ["Completed Date", "Amount"],   # source columns to retain
-        "rename": {"Completed Date": "Date"},      # source -> output name
-        "order":  ["Date", "Amount"]               # final order, by output name
+        "keep":      ["Completed Date", "Amount"],   # source columns to retain
+        "rename":    {"Completed Date": "Date"},      # source -> output name
+        "constants": {"Currency": "EUR"},             # new columns with a fixed value
+        "order":     ["Date", "Amount", "Currency"],  # final order, by output name
+        "sort":      {"by": "Date", "descending": false}  # reorder rows by a column
     }
 
 All keys are optional. ``keep`` defaults to all columns; ``rename`` defaults to
-identity; ``order`` defaults to ``keep`` order (after renaming).
+identity; ``constants`` adds output columns that don't exist in the source;
+``order`` defaults to kept columns (after renaming) followed by constants;
+``sort`` reorders the output rows by one output column (numeric when possible).
 """
 
 import csv
@@ -41,22 +45,57 @@ def read_headers(path: str, has_header: bool = True) -> List[str]:
     return first if has_header else _generated_names(len(first))
 
 
-def _resolve_columns(source_header, transform) -> List[Tuple[str, str]]:
-    """Compute ordered (output_name, source_name) pairs from the transform schema."""
+def _resolve_specs(source_header, transform) -> List[dict]:
+    """Compute ordered output column specs from the transform schema.
+
+    Each spec is ``{"name": <output name>, "src": <source name>}`` for a column
+    copied from the source, or ``{"name": <output name>, "const": <value>}`` for
+    an added constant column.
+    """
     keep = transform.get("keep") or list(source_header)
     rename = transform.get("rename") or {}
+    constants = transform.get("constants") or {}
     order = transform.get("order")
 
-    # Keep only requested columns that actually exist, preserving `keep` order.
-    pairs = [(rename.get(src, src), src) for src in keep if src in source_header]
+    # Kept source columns that actually exist, preserving `keep` order.
+    specs = [
+        {"name": rename.get(src, src), "src": src}
+        for src in keep
+        if src in source_header
+    ]
+    # Constant columns appended after the source columns by default.
+    specs += [{"name": name, "const": str(value)} for name, value in constants.items()]
 
     if order:
-        index = {out: (out, src) for out, src in pairs}
-        ordered = [index[name] for name in order if name in index]
-        # Append any kept columns the user didn't mention in `order`.
-        ordered += [p for p in pairs if p[0] not in set(order)]
-        pairs = ordered
-    return pairs
+        by_name = {spec["name"]: spec for spec in specs}
+        ordered = [by_name[name] for name in order if name in by_name]
+        ordered += [s for s in specs if s["name"] not in set(order)]
+        specs = ordered
+    return specs
+
+
+def _sort_rows(rows: List[List[str]], idx: int, descending: bool) -> None:
+    """Sort ``rows`` in place by column ``idx`` (numeric when all values parse)."""
+
+    def cell(row):
+        return row[idx] if idx < len(row) else ""
+
+    def is_numeric(value):
+        if value == "":
+            return True
+        try:
+            float(value)
+            return True
+        except ValueError:
+            return False
+
+    if all(is_numeric(cell(r)) for r in rows):
+        rows.sort(
+            key=lambda r: float(cell(r)) if cell(r) != "" else float("-inf"),
+            reverse=descending,
+        )
+    else:
+        rows.sort(key=cell, reverse=descending)
 
 
 def apply_transform(
@@ -84,18 +123,35 @@ def apply_transform(
         data_rows = rows
 
     col_index = {name: i for i, name in enumerate(source_header)}
-    pairs = _resolve_columns(source_header, transform)
-    output_header = [out for out, _ in pairs]
-    indices = [col_index[src] for _, src in pairs]
+    specs = _resolve_specs(source_header, transform)
+    output_header = [spec["name"] for spec in specs]
+
+    # Build the output rows (applying constants and source selection).
+    out_rows = []
+    for row in data_rows:
+        out_row = []
+        for spec in specs:
+            if "const" in spec:
+                out_row.append(spec["const"])
+            else:
+                i = col_index[spec["src"]]
+                out_row.append(row[i] if i < len(row) else "")
+        out_rows.append(out_row)
+
+    # Optionally reorder rows by a column.
+    sort = transform.get("sort")
+    if sort and sort.get("by") in output_header:
+        _sort_rows(
+            out_rows, output_header.index(sort["by"]), bool(sort.get("descending", False))
+        )
 
     with open(out_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(output_header)
-        for row in data_rows:
-            writer.writerow([row[i] if i < len(row) else "" for i in indices])
+        writer.writerows(out_rows)
 
     logger.info(
-        f"Transformed {in_path}: {len(data_rows)} rows, "
+        f"Transformed {in_path}: {len(out_rows)} rows, "
         f"{len(output_header)} columns -> {out_path}"
     )
-    return output_header, len(data_rows)
+    return output_header, len(out_rows)

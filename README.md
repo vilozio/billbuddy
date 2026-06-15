@@ -17,7 +17,7 @@ BillBuddy is an intelligent Telegram bot with two processing directions:
 - 🧩 **Scenario setup wizard**: Teach the bot a new file kind once; it remembers and reuses the setup
 - 🔎 **Filename recognition**: Recurring files are matched by a human-friendly pattern with `{date}` / `{any}` placeholders
 - 🤖 **AI-assisted column mapping**: Describe the transformation in plain language; the bot proposes a mapping you confirm. The transformation itself runs in deterministic code
-- 🔁 **Transformations**: keep / drop / rename / reorder columns
+- 🔁 **Transformations**: keep / drop / rename / reorder columns, add constant columns (e.g. `Source = Revolut`), and sort rows by a column (numeric-aware, ascending or descending)
 - 🎯 **Flexible destinations**: append rows to a Google Sheet tab and/or upload the transformed CSV to a Drive folder
 - ⚡ **Automatic re-processing**: once a scenario exists, matching files are processed with no questions
 
@@ -37,7 +37,7 @@ When you send a new kind of CSV the bot asks three things:
    `account-statement_2026-06-01_2026-06-15_en_6d52ac.csv` → `account-statement_{date}_{date}_en_{any}.csv`.
    Placeholders: `{date}` = `YYYY-MM-DD`, `{any}` = any token. Send `ok` to accept or type your own.
 2. **Transformation** — describe it in plain language, e.g.
-   *"keep Completed Date and Amount, rename Completed Date to Date"*. The bot shows the proposed mapping; send `yes` to confirm or type a new instruction to refine.
+   *"keep Completed Date and Amount, rename Completed Date to Date, add a column Source set to Revolut, sort by Date newest first"*. Supported operations: keep/drop, rename, reorder columns, add **constant columns**, and **sort rows by a column** (ascending/descending, numeric when the values are numbers). The bot shows the proposed mapping; send `yes` to confirm or type a new instruction to refine.
 3. **Destination** — a Google Sheet tab, a Drive folder, or both. For a Sheet, it offers any spreadsheets you've used before (remembered in the local database); you can pick one, paste a new spreadsheet link/ID (saved for next time), or create a new one with `new <Title>`, then name the tab.
 
 The scenario is saved to a local SQLite database. The file that triggered the setup is processed immediately, and future files matching the pattern are processed automatically.

@@ -65,6 +65,67 @@ def test_csv_transformer():
     print("✓ csv_transformer")
 
 
+def test_csv_transformer_constants_and_sort():
+    with tempfile.TemporaryDirectory() as d:
+        in_path = os.path.join(d, "in.csv")
+        out_path = os.path.join(d, "out.csv")
+        with open(in_path, "w", encoding="utf-8") as f:
+            f.write(SAMPLE_CSV)
+
+        transform = {
+            "keep": ["Description", "Amount"],
+            "constants": {"Source": "Revolut"},
+            "order": ["Source", "Description", "Amount"],
+            "sort": {"by": "Amount", "descending": False},  # numeric: -3.46 before -2.20
+        }
+        header, n_rows = csv_transformer.apply_transform(in_path, out_path, transform, True)
+        assert header == ["Source", "Description", "Amount"], header
+        assert n_rows == 2
+
+        with open(out_path, encoding="utf-8") as f:
+            lines = f.read().strip().splitlines()
+        assert lines[0] == "Source,Description,Amount"
+        # Constant column applied to every row.
+        assert lines[1].startswith("Revolut,") and lines[2].startswith("Revolut,")
+        # Numeric ascending sort: -3.46 (Mercadona) comes before -2.20 (Lousbury).
+        assert lines[1] == "Revolut,Mercadona,-3.46"
+        assert lines[2] == "Revolut,Lousbury,-2.20"
+
+        # Descending sort flips the order.
+        transform["sort"]["descending"] = True
+        csv_transformer.apply_transform(in_path, out_path, transform, True)
+        with open(out_path, encoding="utf-8") as f:
+            lines = f.read().strip().splitlines()
+        assert lines[1] == "Revolut,Lousbury,-2.20"
+    print("✓ csv_transformer constants + sort")
+
+
+def test_transform_ai_sanitize():
+    from app.services.transform_ai_service import TransformAIService
+
+    columns = ["Completed Date", "Amount", "Fee"]
+    raw = {
+        "keep": ["Completed Date", "Amount", "Bogus"],  # Bogus dropped
+        "rename": {"Completed Date": "Date", "Ghost": "X"},  # Ghost dropped
+        "constants": {"Source": "Revolut"},
+        "order": ["Date", "Source", "Amount"],
+        "sort": {"by": "Date", "descending": True},
+    }
+    clean = TransformAIService._sanitize(raw, columns)
+    assert clean["keep"] == ["Completed Date", "Amount"]
+    assert clean["rename"] == {"Completed Date": "Date"}
+    assert clean["constants"] == {"Source": "Revolut"}
+    assert clean["order"] == ["Date", "Source", "Amount"]
+    assert clean["sort"] == {"by": "Date", "descending": True}
+
+    # A sort.by that isn't an output name is dropped.
+    bad = TransformAIService._sanitize(
+        {"keep": ["Amount"], "sort": {"by": "Nope"}}, columns
+    )
+    assert "sort" not in bad
+    print("✓ transform_ai sanitize")
+
+
 def test_scenario_store():
     init_db()
     scenario = Scenario(
@@ -163,6 +224,8 @@ def test_parse_a1_rows():
 if __name__ == "__main__":
     test_filename_matcher()
     test_csv_transformer()
+    test_csv_transformer_constants_and_sort()
+    test_transform_ai_sanitize()
     test_scenario_store()
     test_spreadsheet_id_extraction()
     test_action_log()
