@@ -205,6 +205,26 @@ class GenericSheetsService:
             logger.error(f"Failed to initialize Generic Sheets service: {e}")
             raise
 
+    def create_spreadsheet(self, title: str) -> str:
+        """Create a new spreadsheet and return its id."""
+        spreadsheet = (
+            self.service.spreadsheets()
+            .create(body={"properties": {"title": title}}, fields="spreadsheetId")
+            .execute()
+        )
+        spreadsheet_id = spreadsheet["spreadsheetId"]
+        logger.info(f"Created spreadsheet '{title}' ({spreadsheet_id})")
+        return spreadsheet_id
+
+    def get_spreadsheet_title(self, spreadsheet_id: str) -> str:
+        """Return the title of a spreadsheet (raises if inaccessible)."""
+        meta = (
+            self.service.spreadsheets()
+            .get(spreadsheetId=spreadsheet_id, fields="properties.title")
+            .execute()
+        )
+        return meta["properties"]["title"]
+
     def _ensure_tab(self, spreadsheet_id: str, tab: str):
         """Create the tab if it does not already exist."""
         try:

@@ -33,6 +33,12 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS known_sheets (
+    spreadsheet_id TEXT PRIMARY KEY,  -- a spreadsheet the user has used before
+    label          TEXT,              -- friendly name (spreadsheet title)
+    last_used      TEXT
+);
 """
 
 

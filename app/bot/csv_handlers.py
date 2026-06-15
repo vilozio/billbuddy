@@ -1,12 +1,12 @@
 """Telegram handlers for CSV statement processing and the scenario setup wizard."""
 
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.ext import (
-    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     ConversationHandler,
@@ -25,7 +25,14 @@ from app.utils.logger import setup_logger
 logger = setup_logger(__name__, Config.LOG_LEVEL)
 
 # Conversation states
-ASK_PATTERN, ASK_TRANSFORM, CONFIRM_TRANSFORM, ASK_DESTINATION, ASK_SHEET_TAB = range(5)
+(
+    ASK_PATTERN,
+    ASK_TRANSFORM,
+    CONFIRM_TRANSFORM,
+    ASK_DESTINATION,
+    ASK_SPREADSHEET,
+    ASK_SHEET_TAB,
+) = range(6)
 
 statement_processor = StatementProcessor()
 transform_ai = None  # lazily initialized (avoids needing OPENAI key just to import)
@@ -138,40 +145,116 @@ async def confirm_transform(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text.lower() not in ("yes", "/yes"):
         return await ask_transform(update, context)
 
-    keyboard = InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("Sheet tab", callback_data="dest:sheet"),
-                InlineKeyboardButton("Drive folder", callback_data="dest:drive"),
-                InlineKeyboardButton("Both", callback_data="dest:both"),
-            ]
-        ]
-    )
     await update.message.reply_text(
-        "*3. Destination* — where should the result go?", parse_mode="Markdown", reply_markup=keyboard
+        "*3. Destination* — where should the result go?\n"
+        "Reply with one of: *sheet*, *drive*, or *both*.",
+        parse_mode="Markdown",
     )
     return ASK_DESTINATION
 
 
 async def choose_destination(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Step 4: handle the destination button choice."""
-    query = update.callback_query
-    await query.answer()
-    choice = query.data.split(":", 1)[1]
+    """Step 4: parse the destination choice (sheet / drive / both)."""
+    choice = update.message.text.strip().lower()
+    if choice not in ("sheet", "drive", "both"):
+        await update.message.reply_text(
+            "Please reply with one of: *sheet*, *drive*, or *both*.",
+            parse_mode="Markdown",
+        )
+        return ASK_DESTINATION
+
     data = context.user_data["csv"]
     data["dest_sheet"] = choice in ("sheet", "both")
     data["dest_drive"] = choice in ("drive", "both")
 
     if data["dest_sheet"]:
-        await query.edit_message_text(
-            "Which Google Sheet *tab* should I append rows to? Send the tab name.",
-            parse_mode="Markdown",
-        )
-        return ASK_SHEET_TAB
+        return await _prompt_spreadsheet(update, context)
 
     # Drive only — no further input needed.
-    await query.edit_message_text("Setting up…")
     return await _finalize(update, context)
+
+
+def _extract_spreadsheet_id(text: str):
+    """Pull a spreadsheet id out of a Google Sheets URL or a raw id, else None."""
+    m = re.search(r"/spreadsheets/d/([A-Za-z0-9-_]+)", text) or re.search(
+        r"/d/([A-Za-z0-9-_]+)", text
+    )
+    if m:
+        return m.group(1)
+    if re.fullmatch(r"[A-Za-z0-9-_]{20,}", text):
+        return text
+    return None
+
+
+async def _prompt_spreadsheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ask which spreadsheet to append to, offering previously-used ones."""
+    known = scenario_store.list_known_sheets()
+    context.user_data["csv"]["known_sheets"] = known
+
+    lines = ["*Which spreadsheet should I append to?*"]
+    if known:
+        for i, (_sid, label) in enumerate(known, 1):
+            lines.append(f"{i}. {label}")
+        lines.append(
+            "\nReply with a number, paste a spreadsheet link/ID, "
+            "or send `new <Title>` to create one."
+        )
+    else:
+        lines.append(
+            "Paste a spreadsheet link or ID, or send `new <Title>` to create one."
+        )
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    return ASK_SPREADSHEET
+
+
+async def choose_spreadsheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Resolve the spreadsheet choice (saved entry / pasted link-ID / new)."""
+    text = update.message.text.strip()
+    data = context.user_data["csv"]
+    known = data.get("known_sheets", [])
+
+    ssid = None
+    label = None
+
+    if text.lower().startswith("new "):
+        title = text[4:].strip() or "BillBuddy Statements"
+        try:
+            ssid = statement_processor.create_spreadsheet(title)
+            label = title
+        except Exception as e:
+            logger.error(f"Failed to create spreadsheet: {e}", exc_info=True)
+            await update.message.reply_text(
+                "⚠️ Couldn't create that spreadsheet. Try again, or paste an existing link/ID."
+            )
+            return ASK_SPREADSHEET
+    elif text.isdigit() and 1 <= int(text) <= len(known):
+        ssid, label = known[int(text) - 1]
+    else:
+        ssid = _extract_spreadsheet_id(text)
+        if ssid:
+            try:
+                label = statement_processor.get_spreadsheet_title(ssid)
+            except Exception as e:
+                logger.warning(f"Couldn't read spreadsheet title for {ssid}: {e}")
+                label = ssid
+
+    if not ssid:
+        await update.message.reply_text(
+            "I couldn't read that. Reply with a number from the list, "
+            "a spreadsheet link/ID, or `new <Title>`.",
+            parse_mode="Markdown",
+        )
+        return ASK_SPREADSHEET
+
+    data["sheet_spreadsheet_id"] = ssid
+    scenario_store.add_known_sheet(ssid, label or ssid)
+
+    await update.message.reply_text(
+        f"Using *{label or ssid}*.\n\n"
+        "Which *tab* should I append rows to? Send the tab name.",
+        parse_mode="Markdown",
+    )
+    return ASK_SHEET_TAB
 
 
 async def ask_sheet_tab(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -186,7 +269,12 @@ async def _finalize(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = context.user_data["csv"]
     drive_folder = Config.STATEMENTS_DRIVE_FOLDER_ID or Config.GOOGLE_DRIVE_FOLDER_ID
-    sheet_id = Config.STATEMENTS_SHEET_ID or Config.GOOGLE_SHEET_ID
+    # The spreadsheet chosen during setup; fall back to env config only if unset.
+    sheet_id = (
+        data.get("sheet_spreadsheet_id")
+        or Config.STATEMENTS_SHEET_ID
+        or Config.GOOGLE_SHEET_ID
+    )
 
     scenario = Scenario(
         name=_default_name(data["pattern"]),
@@ -203,13 +291,11 @@ async def _finalize(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     scenario_store.add_scenario(scenario)
 
-    # The message object differs between a callback and a text reply.
-    reply_target = update.message or update.callback_query.message
     summary = statement_processor.process(data["file_path"], data["filename"], scenario)
     _cleanup(data["file_path"])
     context.user_data.pop("csv", None)
 
-    await reply_target.reply_text(
+    await update.message.reply_text(
         f"✅ Scenario *{scenario.name}* saved. Future matching files are processed automatically.\n\n"
         + (summary or "❌ Failed to process this file."),
         parse_mode="Markdown",
@@ -247,7 +333,8 @@ def build_csv_conversation() -> ConversationHandler:
             CONFIRM_TRANSFORM: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_transform)
             ],
-            ASK_DESTINATION: [CallbackQueryHandler(choose_destination, pattern=r"^dest:")],
+            ASK_DESTINATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_destination)],
+            ASK_SPREADSHEET: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_spreadsheet)],
             ASK_SHEET_TAB: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_sheet_tab)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],

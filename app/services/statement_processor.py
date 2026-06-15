@@ -44,6 +44,14 @@ class StatementProcessor:
             self._drive = GoogleDriveService()
         return self._drive
 
+    def create_spreadsheet(self, title: str) -> str:
+        """Create a new spreadsheet and return its id (for setup)."""
+        return self._sheets_service().create_spreadsheet(title)
+
+    def get_spreadsheet_title(self, spreadsheet_id: str) -> str:
+        """Return a spreadsheet's title (for labeling a pasted link)."""
+        return self._sheets_service().get_spreadsheet_title(spreadsheet_id)
+
     def process(self, file_path: str, filename: str, scenario: Scenario) -> Optional[str]:
         """Run the scenario against ``file_path`` and return a user-facing summary."""
         try:

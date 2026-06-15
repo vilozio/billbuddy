@@ -1,7 +1,8 @@
 """CRUD layer for statement scenarios and runtime settings (SQLite-backed)."""
 
 import re
-from typing import List, Optional
+from datetime import datetime
+from typing import List, Optional, Tuple
 
 from app.config import Config
 from app.db import get_connection
@@ -70,6 +71,31 @@ def set_setting(key: str, value: str) -> None:
             "INSERT INTO settings (key, value) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, value),
+        )
+
+
+# --- Known spreadsheets (destinations the user has used before) ---
+
+
+def list_known_sheets() -> List[Tuple[str, str]]:
+    """Return previously-used spreadsheets as (spreadsheet_id, label), recent first."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT spreadsheet_id, label FROM known_sheets ORDER BY last_used DESC"
+        ).fetchall()
+    return [(r["spreadsheet_id"], r["label"]) for r in rows]
+
+
+def add_known_sheet(spreadsheet_id: str, label: str) -> None:
+    """Remember a spreadsheet destination (insert or refresh its label/last_used)."""
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO known_sheets (spreadsheet_id, label, last_used) "
+            "VALUES (?, ?, ?) "
+            "ON CONFLICT(spreadsheet_id) DO UPDATE SET "
+            "label = excluded.label, last_used = excluded.last_used",
+            (spreadsheet_id, label, now),
         )
 
 

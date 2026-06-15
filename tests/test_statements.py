@@ -97,12 +97,33 @@ def test_scenario_store():
 
     assert scenario_store.delete_scenario(new_id) is True
     assert scenario_store.find_matching("account-statement_2026-08-01_2026-08-31_en_zz99zz.csv") is None
+
+    # Known sheets: insert, list, and upsert label.
+    scenario_store.add_known_sheet("ss_abc", "Revolut Log")
+    scenario_store.add_known_sheet("ss_def", "Investments")
+    known = scenario_store.list_known_sheets()
+    assert ("ss_def", "Investments") in known and ("ss_abc", "Revolut Log") in known
+    scenario_store.add_known_sheet("ss_abc", "Revolut Log 2026")  # upsert label
+    labels = dict(scenario_store.list_known_sheets())
+    assert labels["ss_abc"] == "Revolut Log 2026"
     print("✓ scenario_store")
+
+
+def test_spreadsheet_id_extraction():
+    from app.bot.csv_handlers import _extract_spreadsheet_id
+
+    url = "https://docs.google.com/spreadsheets/d/1AbC-dEfG_hiJklmnopqrstuvwxyz12345/edit#gid=0"
+    assert _extract_spreadsheet_id(url) == "1AbC-dEfG_hiJklmnopqrstuvwxyz12345"
+    raw = "1AbC-dEfG_hiJklmnopqrstuvwxyz12345"
+    assert _extract_spreadsheet_id(raw) == raw
+    assert _extract_spreadsheet_id("not a sheet") is None
+    print("✓ spreadsheet_id extraction")
 
 
 if __name__ == "__main__":
     test_filename_matcher()
     test_csv_transformer()
     test_scenario_store()
+    test_spreadsheet_id_extraction()
     os.unlink(_TMP_DB.name)
     print("\nAll tests passed.")

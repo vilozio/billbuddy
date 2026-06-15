@@ -38,7 +38,7 @@ When you send a new kind of CSV the bot asks three things:
    Placeholders: `{date}` = `YYYY-MM-DD`, `{any}` = any token. Send `ok` to accept or type your own.
 2. **Transformation** — describe it in plain language, e.g.
    *"keep Completed Date and Amount, rename Completed Date to Date"*. The bot shows the proposed mapping; send `yes` to confirm or type a new instruction to refine.
-3. **Destination** — a Google Sheet tab, a Drive folder, or both.
+3. **Destination** — a Google Sheet tab, a Drive folder, or both. For a Sheet, it offers any spreadsheets you've used before (remembered in the local database); you can pick one, paste a new spreadsheet link/ID (saved for next time), or create a new one with `new <Title>`, then name the tab.
 
 The scenario is saved to a local SQLite database. The file that triggered the setup is processed immediately, and future files matching the pattern are processed automatically.
 

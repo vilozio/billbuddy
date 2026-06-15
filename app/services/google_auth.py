@@ -40,6 +40,12 @@ class GoogleAuthService:
                 creds = pickle.load(token)
                 logger.debug("Loaded existing credentials from token file")
 
+        # If the configured scopes have grown beyond what the stored token was
+        # granted, force a fresh consent flow (otherwise calls fail with 403).
+        if creds and creds.scopes and not set(cls.SCOPES).issubset(set(creds.scopes)):
+            logger.info("Required scopes changed; re-running OAuth flow")
+            creds = None
+
         # If no valid credentials, run OAuth flow
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
