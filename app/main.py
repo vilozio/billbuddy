@@ -17,6 +17,7 @@ from app.bot.settings_commands import (
     receipts_off_command,
     receipts_on_command,
     scenarios_command,
+    undo_command,
 )
 from app.config import Config
 from app.db import init_db
@@ -50,6 +51,7 @@ def main():
         application.add_handler(CommandHandler("receipts_off", receipts_off_command))
         application.add_handler(CommandHandler("scenarios", scenarios_command))
         application.add_handler(CommandHandler("delete_scenario", delete_scenario_command))
+        application.add_handler(CommandHandler("undo", undo_command))
 
         # CSV statement upload + scenario setup wizard (handles .csv documents).
         # Registered before the receipt document handler so CSVs are routed here.

@@ -232,6 +232,7 @@ Send a `.csv` file:
 - `/status` — Check if the bot is operational
 - `/scenarios` — List saved CSV statement scenarios
 - `/delete_scenario <id>` — Delete a saved scenario
+- `/undo` — Undo the last processed receipt or statement (removes the appended Sheet rows and deletes the uploaded Drive file). Run again to undo the one before it.
 - `/receipts_on` — Enable receipt (photo/PDF) processing
 - `/receipts_off` — Disable receipt processing (statements stay active)
 - `/cancel` — Abort the current CSV setup wizard

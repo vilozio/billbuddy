@@ -14,7 +14,7 @@ from typing import Optional
 
 from app.config import Config
 from app.models.scenario import Scenario
-from app.services import csv_transformer
+from app.services import csv_transformer, scenario_store
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__, Config.LOG_LEVEL)
@@ -52,7 +52,13 @@ class StatementProcessor:
         """Return a spreadsheet's title (for labeling a pasted link)."""
         return self._sheets_service().get_spreadsheet_title(spreadsheet_id)
 
-    def process(self, file_path: str, filename: str, scenario: Scenario) -> Optional[str]:
+    def process(
+        self,
+        file_path: str,
+        filename: str,
+        scenario: Scenario,
+        user_id: Optional[int] = None,
+    ) -> Optional[str]:
         """Run the scenario against ``file_path`` and return a user-facing summary."""
         try:
             out_path = str(TEMP_DIR / f"transformed_{filename}")
@@ -64,6 +70,7 @@ class StatementProcessor:
                 f"📄 Processed *{scenario.name}*",
                 f"Rows: {n_rows} · Columns: {len(header)}",
             ]
+            undo = {}  # reversal info accumulated across destinations
 
             try:
                 if scenario.dest_sheet:
@@ -77,14 +84,23 @@ class StatementProcessor:
                     appended = self._sheets_service().append_rows(
                         spreadsheet_id, scenario.sheet_tab, header, rows
                     )
-                    results.append(f"✅ Appended {appended} rows to tab '{scenario.sheet_tab}'")
+                    results.append(
+                        f"✅ Appended {appended['appended']} rows to tab '{scenario.sheet_tab}'"
+                    )
+                    if appended.get("range"):
+                        undo["sheet"] = {
+                            "spreadsheet_id": spreadsheet_id,
+                            "range": appended["range"],
+                        }
 
                 if scenario.dest_drive:
-                    link = self._drive_service().upload_file(
+                    upload = self._drive_service().upload_file(
                         out_path, scenario.drive_folder_id, filename=filename
                     )
-                    if link:
+                    if upload:
+                        link, file_id = upload
                         results.append(f"✅ Uploaded to Drive: {link}")
+                        undo["drive_file_id"] = file_id
                     else:
                         results.append("⚠️ Drive upload failed")
             finally:
@@ -93,6 +109,18 @@ class StatementProcessor:
                     os.remove(out_path)
                 except OSError:
                     pass
+
+            # Record the action so it can be undone (/undo).
+            if user_id is not None and undo:
+                try:
+                    scenario_store.record_action(
+                        user_id,
+                        "statement",
+                        f"Statement: {scenario.name} ({n_rows} rows)",
+                        undo,
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not record statement action for undo: {e}")
 
             return "\n".join(results)
 

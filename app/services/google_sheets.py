@@ -1,6 +1,7 @@
 """Google Sheets service for logging receipt data"""
 
-from typing import List, Optional
+import re
+from typing import List, Optional, Tuple
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -12,6 +13,23 @@ from app.services.google_auth import GoogleAuthService
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__, Config.LOG_LEVEL)
+
+
+def parse_a1_rows(a1_range: str) -> Tuple[Optional[str], Optional[int], Optional[int]]:
+    """Parse an A1 range into (tab, start_row, end_row), rows 1-based inclusive.
+
+    Examples: ``"Sheet1!A5:H6"`` -> ``("Sheet1", 5, 6)``;
+    ``"'My Tab'!A2:C2"`` -> ``("My Tab", 2, 2)``; a bare ``"A2:C3"`` -> ``(None, 2, 3)``.
+    """
+    if "!" in a1_range:
+        tab, cells = a1_range.rsplit("!", 1)
+        tab = tab.strip().strip("'")
+    else:
+        tab, cells = None, a1_range
+    row_numbers = [int(n) for _, n in re.findall(r"([A-Za-z]+)(\d+)", cells)]
+    if not row_numbers:
+        return tab, None, None
+    return tab, min(row_numbers), max(row_numbers)
 
 
 class GoogleSheetsService:
@@ -96,7 +114,7 @@ class GoogleSheetsService:
     @retry(
         stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10)
     )
-    def append_receipt(self, receipt: Receipt) -> bool:
+    def append_receipt(self, receipt: Receipt) -> Optional[str]:
         """
         Append receipt data to the spreadsheet
 
@@ -104,7 +122,7 @@ class GoogleSheetsService:
             receipt: Receipt object with extracted data
 
         Returns:
-            True if successful, False otherwise
+            The appended A1 range (e.g. "Sheet1!A5:H5") on success, else None.
         """
         try:
             logger.info(f"Appending receipt to Google Sheets: {receipt.merchant}")
@@ -128,17 +146,18 @@ class GoogleSheetsService:
                 .execute()
             )
 
+            updates = result.get("updates", {})
             logger.info(
-                f"Receipt appended successfully. Updated {result.get('updates', {}).get('updatedRows', 0)} rows"
+                f"Receipt appended successfully. Updated {updates.get('updatedRows', 0)} rows"
             )
-            return True
+            return updates.get("updatedRange")
 
         except HttpError as e:
             logger.error(f"HTTP error appending to sheet: {e}")
-            return False
+            return None
         except Exception as e:
             logger.error(f"Error appending to sheet: {e}", exc_info=True)
-            return False
+            return None
 
     def get_all_receipts(self) -> List[List]:
         """
@@ -263,13 +282,16 @@ class GenericSheetsService:
     )
     def append_rows(
         self, spreadsheet_id: str, tab: str, header: List[str], rows: List[List]
-    ) -> int:
-        """Ensure the tab/header exist, then append ``rows``. Returns rows appended."""
+    ) -> dict:
+        """Ensure the tab/header exist, then append ``rows``.
+
+        Returns ``{"appended": <count>, "range": <appended A1 range or None>}``.
+        """
         self._ensure_tab(spreadsheet_id, tab)
         self._ensure_header(spreadsheet_id, tab, header)
 
         if not rows:
-            return 0
+            return {"appended": 0, "range": None}
 
         result = (
             self.service.spreadsheets()
@@ -283,6 +305,53 @@ class GenericSheetsService:
             )
             .execute()
         )
-        appended = result.get("updates", {}).get("updatedRows", 0)
+        updates = result.get("updates", {})
+        appended = updates.get("updatedRows", 0)
         logger.info(f"Appended {appended} rows to tab '{tab}'")
-        return appended
+        return {"appended": appended, "range": updates.get("updatedRange")}
+
+    def _sheet_id_for_tab(self, spreadsheet_id: str, tab: Optional[str]) -> Optional[int]:
+        """Resolve a tab title to its numeric sheetId (first sheet if tab is None)."""
+        meta = (
+            self.service.spreadsheets()
+            .get(spreadsheetId=spreadsheet_id, fields="sheets.properties(sheetId,title)")
+            .execute()
+        )
+        sheets = meta.get("sheets", [])
+        if tab:
+            for s in sheets:
+                if s["properties"]["title"] == tab:
+                    return s["properties"]["sheetId"]
+            return None
+        return sheets[0]["properties"]["sheetId"] if sheets else None
+
+    def delete_rows_in_range(self, spreadsheet_id: str, a1_range: str) -> bool:
+        """Delete the rows covered by an A1 range like ``Sheet1!A5:H6`` (for undo)."""
+        tab, start_row, end_row = parse_a1_rows(a1_range)
+        sheet_id = self._sheet_id_for_tab(spreadsheet_id, tab)
+        if sheet_id is None or start_row is None:
+            logger.warning(f"Cannot resolve range for deletion: {a1_range}")
+            return False
+        try:
+            self.service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={
+                    "requests": [
+                        {
+                            "deleteDimension": {
+                                "range": {
+                                    "sheetId": sheet_id,
+                                    "dimension": "ROWS",
+                                    "startIndex": start_row - 1,  # 0-based, inclusive
+                                    "endIndex": end_row,  # 0-based, exclusive
+                                }
+                            }
+                        }
+                    ]
+                },
+            ).execute()
+            logger.info(f"Deleted rows {start_row}-{end_row} from '{tab}'")
+            return True
+        except HttpError as e:
+            logger.error(f"Error deleting rows in {a1_range}: {e}")
+            return False

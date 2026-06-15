@@ -39,6 +39,16 @@ CREATE TABLE IF NOT EXISTS known_sheets (
     label          TEXT,              -- friendly name (spreadsheet title)
     last_used      TEXT
 );
+
+CREATE TABLE IF NOT EXISTS actions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER,
+    kind        TEXT NOT NULL,        -- 'receipt' | 'statement'
+    description TEXT,                 -- human summary shown when undoing
+    undo_json   TEXT NOT NULL,        -- how to reverse it (Drive file id, Sheet range)
+    undone      INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL
+);
 """
 
 

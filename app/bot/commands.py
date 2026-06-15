@@ -70,6 +70,7 @@ Matching files are then processed automatically.
 /status - Check if the bot is working
 /scenarios - List saved CSV statement scenarios
 /delete\\_scenario <id> - Delete a saved scenario
+/undo - Undo the last processed receipt or statement
 /receipts\\_on - Enable receipt (photo/PDF) processing
 /receipts\\_off - Disable receipt processing
 /cancel - Abort the current CSV setup

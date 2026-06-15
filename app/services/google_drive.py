@@ -110,7 +110,7 @@ class GoogleDriveService:
     )
     def upload_receipt(
         self, file_path: str, receipt_date: str, merchant_name: str, amount: float
-    ) -> Optional[str]:
+    ) -> Optional[tuple]:
         """
         Upload receipt file to Google Drive with organized folder structure
 
@@ -121,7 +121,7 @@ class GoogleDriveService:
             amount: Receipt amount for filename
 
         Returns:
-            Shareable link to the uploaded file, or None if upload fails
+            (shareable link, file id) tuple, or None if upload fails
         """
         try:
             logger.info(f"Uploading receipt to Google Drive: {file_path}")
@@ -161,7 +161,7 @@ class GoogleDriveService:
             web_link = file.get("webViewLink")
             logger.info(f"Receipt uploaded successfully: {web_link}")
 
-            return web_link
+            return web_link, file_id
 
         except HttpError as e:
             logger.error(f"HTTP error uploading receipt: {e}")
@@ -175,7 +175,7 @@ class GoogleDriveService:
     )
     def upload_file(
         self, file_path: str, folder_id: str, filename: Optional[str] = None
-    ) -> Optional[str]:
+    ) -> Optional[tuple]:
         """
         Upload an arbitrary file to a specific Drive folder (no receipt-specific
         naming or year/month structure). Used by the statement (CSV) pipeline.
@@ -186,7 +186,7 @@ class GoogleDriveService:
             filename: Name to store the file as (defaults to the local file name)
 
         Returns:
-            Shareable link to the uploaded file, or None if upload fails
+            (shareable link, file id) tuple, or None if upload fails
         """
         try:
             name = filename or Path(file_path).name
@@ -208,7 +208,7 @@ class GoogleDriveService:
 
             web_link = file.get("webViewLink")
             logger.info(f"File uploaded successfully: {web_link}")
-            return web_link
+            return web_link, file_id
 
         except HttpError as e:
             logger.error(f"HTTP error uploading file: {e}")

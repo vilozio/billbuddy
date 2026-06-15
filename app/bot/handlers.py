@@ -57,7 +57,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Photo downloaded to: {file_path}")
 
         # Process the receipt
-        receipt = get_receipt_processor().process_receipt(str(file_path))
+        receipt = get_receipt_processor().process_receipt(str(file_path), user_id=user.id)
         
         # Clean up temporary file
         try:
@@ -131,7 +131,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Document downloaded to: {file_path}")
 
         # Process the receipt
-        receipt = get_receipt_processor().process_receipt(str(file_path))
+        receipt = get_receipt_processor().process_receipt(str(file_path), user_id=user.id)
         
         # Clean up temporary file
         try:

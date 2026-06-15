@@ -6,6 +6,7 @@ from app.models.receipt import Receipt
 from app.services.openai_service import OpenAIService
 from app.services.google_drive import GoogleDriveService
 from app.services.google_sheets import GoogleSheetsService
+from app.services import scenario_store
 from app.utils.logger import setup_logger
 from app.config import Config
 
@@ -31,13 +32,16 @@ class ReceiptProcessor:
             logger.error(f"Failed to initialize receipt processor: {e}")
             raise
     
-    def process_receipt(self, file_path: str) -> Optional[Receipt]:
+    def process_receipt(
+        self, file_path: str, user_id: Optional[int] = None
+    ) -> Optional[Receipt]:
         """
         Process a receipt file through the complete pipeline
-        
+
         Args:
             file_path: Path to the receipt file (image or PDF)
-            
+            user_id: Telegram user id, used to log the action for /undo
+
         Returns:
             Processed Receipt object, or None if processing fails
         """
@@ -60,29 +64,33 @@ class ReceiptProcessor:
             logger.info(f"Extracted receipt data: {receipt.merchant}, ${receipt.total}")
             
             # Step 2: Upload to Google Drive
-            drive_link = self.drive_service.upload_receipt(
+            upload = self.drive_service.upload_receipt(
                 file_path=file_path,
                 receipt_date=receipt.date,
                 merchant_name=receipt.merchant,
                 amount=receipt.total
             )
-            
-            if not drive_link:
+
+            if not upload:
                 logger.error("Failed to upload receipt to Google Drive")
                 return None
-            
+
+            drive_link, drive_file_id = upload
             receipt.drive_link = drive_link
             logger.info(f"Uploaded to Google Drive: {drive_link}")
-            
+
             # Step 3: Log to Google Sheets
-            success = self.sheets_service.append_receipt(receipt)
-            
-            if not success:
+            appended_range = self.sheets_service.append_receipt(receipt)
+
+            if not appended_range:
                 logger.error("Failed to log receipt to Google Sheets")
                 return None
-            
+
             logger.info("Receipt logged to Google Sheets successfully")
-            
+
+            # Record the action so it can be undone (/undo).
+            self._record_action(user_id, receipt, drive_file_id, appended_range)
+
             # Processing complete
             logger.info(f"Receipt processing completed successfully for: {receipt.merchant}")
             return receipt
@@ -91,6 +99,23 @@ class ReceiptProcessor:
             logger.error(f"Error in receipt processing pipeline: {e}", exc_info=True)
             return None
     
+    def _record_action(self, user_id, receipt, drive_file_id, appended_range):
+        """Log the receipt action for undo (best-effort; never breaks processing)."""
+        if user_id is None:
+            return
+        try:
+            undo = {
+                "drive_file_id": drive_file_id,
+                "sheet": {
+                    "spreadsheet_id": Config.GOOGLE_SHEET_ID,
+                    "range": appended_range,
+                },
+            }
+            description = f"Receipt: {receipt.merchant} (${receipt.total:.2f})"
+            scenario_store.record_action(user_id, "receipt", description, undo)
+        except Exception as e:
+            logger.warning(f"Could not record receipt action for undo: {e}")
+
     def get_receipt_summary(self, receipt: Receipt) -> str:
         """
         Generate a user-friendly summary of the processed receipt

@@ -120,10 +120,52 @@ def test_spreadsheet_id_extraction():
     print("✓ spreadsheet_id extraction")
 
 
+def test_action_log():
+    init_db()
+    uid = 42
+    assert scenario_store.last_undoable_action(uid) is None
+
+    a1 = scenario_store.record_action(
+        uid, "statement", "Statement: Revolut (2 rows)",
+        {"sheet": {"spreadsheet_id": "ss1", "range": "Sheet1!A5:H6"}},
+    )
+    a2 = scenario_store.record_action(
+        uid, "receipt", "Receipt: Mercadona ($3.46)",
+        {"drive_file_id": "fileX", "sheet": {"spreadsheet_id": "ss2", "range": "Sheet1!A2:H2"}},
+    )
+
+    # Most recent first.
+    last = scenario_store.last_undoable_action(uid)
+    assert last["id"] == a2 and last["kind"] == "receipt"
+
+    # Undo it -> previous becomes the candidate.
+    scenario_store.mark_action_undone(a2)
+    last = scenario_store.last_undoable_action(uid)
+    assert last["id"] == a1
+
+    # Another user is isolated.
+    assert scenario_store.last_undoable_action(99) is None
+
+    scenario_store.mark_action_undone(a1)
+    assert scenario_store.last_undoable_action(uid) is None
+    print("✓ action_log")
+
+
+def test_parse_a1_rows():
+    from app.services.google_sheets import parse_a1_rows
+
+    assert parse_a1_rows("Sheet1!A5:H6") == ("Sheet1", 5, 6)
+    assert parse_a1_rows("'My Tab'!A2:C2") == ("My Tab", 2, 2)
+    assert parse_a1_rows("A2:C3") == (None, 2, 3)
+    print("✓ parse_a1_rows")
+
+
 if __name__ == "__main__":
     test_filename_matcher()
     test_csv_transformer()
     test_scenario_store()
     test_spreadsheet_id_extraction()
+    test_action_log()
+    test_parse_a1_rows()
     os.unlink(_TMP_DB.name)
     print("\nAll tests passed.")

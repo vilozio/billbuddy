@@ -1,6 +1,8 @@
 """CRUD layer for statement scenarios and runtime settings (SQLite-backed)."""
 
+import json
 import re
+import sqlite3
 from datetime import datetime
 from typing import List, Optional, Tuple
 
@@ -97,6 +99,37 @@ def add_known_sheet(spreadsheet_id: str, label: str) -> None:
             "label = excluded.label, last_used = excluded.last_used",
             (spreadsheet_id, label, now),
         )
+
+
+# --- Action log (for undo) ---
+
+
+def record_action(user_id: int, kind: str, description: str, undo: dict) -> int:
+    """Log a completed, reversible action and return its id."""
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "INSERT INTO actions (user_id, kind, description, undo_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (user_id, kind, description, json.dumps(undo), now),
+        )
+        return cursor.lastrowid
+
+
+def last_undoable_action(user_id: int) -> Optional[sqlite3.Row]:
+    """Return the user's most recent not-yet-undone action, or None."""
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM actions WHERE user_id = ? AND undone = 0 "
+            "ORDER BY id DESC LIMIT 1",
+            (user_id,),
+        ).fetchone()
+
+
+def mark_action_undone(action_id: int) -> None:
+    """Mark an action as undone so a later /undo skips it."""
+    with get_connection() as conn:
+        conn.execute("UPDATE actions SET undone = 1 WHERE id = ?", (action_id,))
 
 
 # --- Convenience helpers for the receipt-processing toggle ---

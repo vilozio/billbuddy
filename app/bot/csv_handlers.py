@@ -69,7 +69,9 @@ async def on_csv(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📥 Recognized this as *{scenario.name}*. Processing…",
             parse_mode="Markdown",
         )
-        summary = statement_processor.process(str(file_path), filename, scenario)
+        summary = statement_processor.process(
+            str(file_path), filename, scenario, user_id=user.id
+        )
         _cleanup(str(file_path))
         await status.edit_text(
             summary or "❌ Failed to process this file.", parse_mode="Markdown"
@@ -291,7 +293,9 @@ async def _finalize(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     scenario_store.add_scenario(scenario)
 
-    summary = statement_processor.process(data["file_path"], data["filename"], scenario)
+    summary = statement_processor.process(
+        data["file_path"], data["filename"], scenario, user_id=update.effective_user.id
+    )
     _cleanup(data["file_path"])
     context.user_data.pop("csv", None)
 
