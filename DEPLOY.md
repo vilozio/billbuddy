@@ -47,11 +47,46 @@ Keep `billbuddy_deploy` (the **private** key) for the `VPS_SSH_KEY` GitHub secre
 
 ### 1.4 Clone the repo
 
+If the repo is **public**, just clone it:
+
 ```bash
-sudo -u billbuddy git clone <repo-url> /home/billbuddy/billbuddy
+sudo -u billbuddy git clone https://github.com/<owner>/billbuddy.git /home/billbuddy/billbuddy
 ```
 
-For a private repo, use an HTTPS token or add a separate read-only deploy key to GitHub.
+#### Private repo — save a GitHub token so `git pull` works unattended
+
+The Actions deploy runs `git pull` as the `billbuddy` user with no interactive prompt, so
+the credential must be stored on the VPS. Use a **fine-grained Personal Access Token**
+(or a classic token) scoped to read this one repo:
+
+1. GitHub → **Settings → Developer settings → Personal access tokens → Fine-grained
+   tokens → Generate new token**.
+2. **Repository access:** *Only select repositories* → pick `billbuddy`.
+3. **Permissions:** Repository permissions → **Contents: Read-only**.
+4. Set an expiry and generate; copy the `github_pat_…` value.
+
+Store it on the VPS via git's credential store so it's used automatically and never
+printed in `git remote -v`:
+
+```bash
+# clone using the token once
+sudo -u billbuddy git clone https://github.com/<owner>/billbuddy.git /home/billbuddy/billbuddy
+cd /home/billbuddy/billbuddy
+
+# persist the credential to ~/.git-credentials (chmod 600) for future pulls
+sudo -u billbuddy git config --global credential.helper store
+sudo -u billbuddy bash -c 'printf "https://x-access-token:%s@github.com\n" "<TOKEN>" > ~/.git-credentials'
+sudo -u billbuddy chmod 600 /home/billbuddy/.git-credentials
+
+# verify an unattended pull works
+sudo -u billbuddy git -C /home/billbuddy/billbuddy pull --ff-only origin main
+```
+
+> Alternative: instead of a token, add a read-only **deploy key** (a separate SSH key)
+> to the repo's *Settings → Deploy keys* and clone via the `git@github.com:` URL.
+>
+> When the token expires, regenerate it and rewrite `~/.git-credentials` with the new
+> value (same `printf` line).
 
 ### 1.5 Bootstrap the venv
 
