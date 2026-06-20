@@ -145,16 +145,34 @@ sudo systemctl status billbuddy        # should show "active (running)"
 
 ### Let the deploy user restart the service without a password
 
-The GitHub Actions deploy runs `sudo systemctl restart billbuddy`. Grant exactly that:
+The GitHub Actions deploy runs `sudo systemctl restart billbuddy`. Grant **exactly** that
+one command, password-free. `systemctl status` does **not** need sudo, so it isn't listed.
+
+First find the real path — sudo matches the resolved absolute path as a literal string, so
+`/bin/systemctl` will *not* match `/usr/bin/systemctl`:
 
 ```bash
-echo 'billbuddy ALL=(ALL) NOPASSWD: /bin/systemctl restart billbuddy, /bin/systemctl status billbuddy' \
-  | sudo tee /etc/sudoers.d/billbuddy
-sudo chmod 440 /etc/sudoers.d/billbuddy
+command -v systemctl        # e.g. /usr/bin/systemctl  (use this exact path below)
 ```
 
-> Check the systemctl path with `which systemctl` — on some distros it is
-> `/usr/bin/systemctl`. Match the sudoers rule to it.
+```bash
+# substitute the path from the command above
+echo 'billbuddy ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart billbuddy' \
+  | sudo tee /etc/sudoers.d/billbuddy
+sudo chmod 440 /etc/sudoers.d/billbuddy
+sudo visudo -c            # validate syntax
+```
+
+Verify it works without a password (this must print nothing/return 0, not prompt):
+
+```bash
+sudo -n -u billbuddy sudo -n /usr/bin/systemctl restart billbuddy
+```
+
+> **Gotchas that cause `sudo: a password is required` in the Actions log:**
+> - Wrong path (`/bin` vs `/usr/bin`) — the rule must match `command -v systemctl`.
+> - Extra flags/args — the rule allows `restart billbuddy` only. The deploy never runs
+>   `status` under sudo, so no flag mismatch there.
 
 ---
 

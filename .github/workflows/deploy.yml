@@ -27,4 +27,4 @@ jobs:
             git pull --ff-only origin main
             .venv/bin/pip install -q -r requirements.txt
             sudo systemctl restart billbuddy
-            sudo systemctl --no-pager status billbuddy | head -n 20
+            systemctl --no-pager status billbuddy | head -n 20
